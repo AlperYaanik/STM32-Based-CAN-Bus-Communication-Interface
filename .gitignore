@@ -1,0 +1,30 @@
+# Build output
+**/Debug/
+**/Release/
+
+# Object, dependency, and build artifact files
+*.o
+*.d
+*.su
+*.cyclo
+*.elf
+*.hex
+*.bin
+*.map
+*.lst
+*.a
+
+# STM32CubeIDE generated lists
+objects.list
+objects.mk
+sources.mk
+
+# IDE settings (machine-specific)
+**/.settings/
+
+# CubeMX generated project file (optional — keep .ioc, ignore this)
+.mxproject
+
+# Windows
+Thumbs.db
+Desktop.ini
