@@ -1,3 +1,0 @@
-D:/alper/Documents/projects/STM32-Based CAN Bus Communication Interface/f401_MCP2515_CANBUS-SPI_Loopback/Core/Src/main.c:64:5:main	8	static
-D:/alper/Documents/projects/STM32-Based CAN Bus Communication Interface/f401_MCP2515_CANBUS-SPI_Loopback/Core/Src/main.c:111:6:SystemClock_Config	88	static
-D:/alper/Documents/projects/STM32-Based CAN Bus Communication Interface/f401_MCP2515_CANBUS-SPI_Loopback/Core/Src/main.c:156:6:Error_Handler	4	static,ignoring_inline_asm

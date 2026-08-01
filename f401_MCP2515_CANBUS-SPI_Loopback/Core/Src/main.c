@@ -18,11 +18,15 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "spi.h"
+#include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
+#include <string.h>
+#include "mcp2515.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -86,20 +90,143 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_USART1_UART_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
+  /* USER CODE
+   * BEGIN WHILE */
   while (1)
   {
-	  //UART EKlenecek Önce CubeMX dosya yükle
+	  //Mod Okuma Modülü
+	  uint8_t mode;
+	  mode = MCP2515_Read(MCP_CANCTRL);
+	  HAL_UART_Transmit(&huart1, (uint8_t *)buffer, strlen(buffer), HAL_MAX_DELAY);
+
 	  /*
-	  //Test STM32F401 Led is working
-	  HAL_GPIO_TogglePin(GPIOC,GPIO_PIN_13);
-	  HAL_Delay(1500);
+	  //Write Test
+	  MCP2515_Reset();
+
+	  MCP2515_Write(MCP_CANCTRL,0x80);
+
+	  uint8_t value = MCP2515_Read(MCP_CANCTRL);
+	  *\
+	  /*
+	   //Status Test
+	   uint8_t status;
+
+	   status = MCP2515_ReadStatus();
+
+	   printf("STATUS = 0x%02X\r\n", status);
+	   */
+	  	 /*
+	   //Configuration Mode Test
+	   uint8_t status;
+	   status = MCP2515_Read(MCP_CANSTAT);if(MCP2515_SetConfigurationMode())
+	   {
+	       printf("Configuration Mode OK\r\n");
+	   }
+	   else
+	   {
+	       printf("Configuration Mode Failed\r\n");
+	   }
+	   *\
+	   /*
+		if(MCP2515_SetBitrate(MCP2515_BITRATE_500KBPS))
+		{
+			printf("Bitrate OK\r\n");
+		}
+		else
+		{
+			printf("Bitrate FAILED\r\n");
+		}
+		printf("CNF1 = 0x%02X\r\n", MCP2515_Read(MCP_CNF1));
+		printf("CNF2 = 0x%02X\r\n", MCP2515_Read(MCP_CNF2));
+		printf("CNF3 = 0x%02X\r\n", MCP2515_Read(MCP_CNF3)); *\
+
+
+		/* Tx Buffer Test */
+	  /*
+	  	  uint8_t txData[8] =
+	  	  {
+	  			  1,2,3,4,5,6,7,8
+	  	  };
+
+	  	  MCP2515_LoadTXBuffer(
+	  			  0x123,
+				  8,
+				  txData
+	  	  );
+	  	  printf("%02X\n",MCP2515_Read(MCP_TXB0SIDH));
+			printf("%02X\n",MCP2515_Read(MCP_TXB0SIDL));
+			printf("%02X\n",MCP2515_Read(MCP_TXB0DLC));
+	  	  */
+		 /* RST Test */
+		 /*MCP2515_Reset();
+
+		MCP2515_SetConfigurationMode();
+
+		MCP2515_SetBitrate(MCP2515_BITRATE_500KBPS);
+
+		MCP2515_SetLoopbackMode();
+
+		MCP2515_LoadTXBuffer();
+
+		MCP2515_RequestToSend();
+		*/
+	  //RX Buffer Text
+	  /*
+	  MCP2515_Frame_t rxFrame;
+
+	  MCP2515_Reset();
+
+	  if(!MCP2515_SetConfigurationMode())
+	  {
+	      printf("Configuration Mode Failed\r\n");
+	      while(1);
+	  }
+
+	  if(!MCP2515_SetBitrate(MCP2515_BITRATE_500KBPS))
+	  {
+	      printf("Bitrate Failed\r\n");
+	      while(1);
+	  }
+
+	  if(!MCP2515_SetLoopbackMode())
+	  {
+	      printf("Loopback Mode Failed\r\n");
+	      while(1);
+	  }
+
+	  MCP2515_LoadTXBuffer();
+
+	  MCP2515_RequestToSend();
+
+	  HAL_Delay(10);
+
+	  if(MCP2515_ReadRXBuffer(&rxFrame))
+	  {
+	      printf("CAN ID : 0x%03X\r\n", rxFrame.id);
+	      printf("DLC    : %d\r\n", rxFrame.dlc);
+
+	      printf("DATA   : ");
+
+	      for(uint8_t i = 0; i < rxFrame.dlc; i++)
+	      {
+	          printf("%02X ", rxFrame.data[i]);
+	      }
+
+	      printf("\r\n");
+	  }
+	  else
+	  {
+	      printf("RX Read Failed\r\n");
+	  }
 	  */
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

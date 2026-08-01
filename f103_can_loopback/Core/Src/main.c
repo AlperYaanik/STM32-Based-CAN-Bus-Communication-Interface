@@ -207,14 +207,14 @@ int main(void)
 	   //Increase data value
 	   TxData[0]++;
 
-	   /* Detect If UART is Working
-	   HAL_Delay(1000);
-	   char msg_2[] = "UART OK\r\n";
-	   HAL_UART_Transmit(&huart1, (uint8_t *)msg_2, strlen(msg_2), HAL_MAX_DELAY);
-	   *\
-	   /* Detect IF Led Is Working
-	   HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-	   HAL_Delay(2000); *\
+	   //Detect If UART is Working
+	   //HAL_Delay(1000);
+	   //char msg_2[] = "UART OK\r\n";
+	   //HAL_UART_Transmit(&huart1, (uint8_t *)msg_2, strlen(msg_2), HAL_MAX_DELAY);
+
+	   // Detect IF Led Is Working
+	   //HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+	   //HAL_Delay(2000);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
