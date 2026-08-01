@@ -101,7 +101,8 @@ int main(void)
    * BEGIN WHILE */
   while (1)
   {
-	  //Mod Okuma Modülü
+	  /* Successful -> Output = CANCTRL = 0X87
+	  //Mode Reading Test
 	  uint8_t mode;
 	  char buf[20];
 	  uint8_t len;
@@ -109,50 +110,78 @@ int main(void)
 	  len = (uint8_t)snprintf(buf, sizeof(buf), "CANCTRL=0x%02X\r\n", mode);
 	  HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
 	  HAL_Delay(1000);
-	  /*
+	  */
+	  /*Successful  -> Output = CANCTRL =0X80
 	  //Write Test
 	  MCP2515_Reset();
 
 	  MCP2515_Write(MCP_CANCTRL,0x80);
 
 	  uint8_t value = MCP2515_Read(MCP_CANCTRL);
-	  */
-	  /*
+	  char buf[20];
+	  uint8_t len = (uint8_t)snprintf(buf, sizeof(buf), "CANCTRL=0x%02X\r\n", value);
+	  HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
+	  HAL_Delay(2000);
+	   */
+	  /* Successful -> Output  = Status = 0x00
 	   //Status Test
 	   uint8_t status;
 
 	   status = MCP2515_ReadStatus();
 
-	   printf("STATUS = 0x%02X\r\n", status);
-	   */
-	  	 /*
-	   //Configuration Mode Test
-	   uint8_t status;
-	   status = MCP2515_Read(MCP_CANSTAT);if(MCP2515_SetConfigurationMode())
-	   {
-	       printf("Configuration Mode OK\r\n");
-	   }
-	   else
-	   {
-	       printf("Configuration Mode Failed\r\n");
-	   }
-	   */
-	   /*
-		if(MCP2515_SetBitrate(MCP2515_BITRATE_500KBPS))
-		{
-			printf("Bitrate OK\r\n");
-		}
-		else
-		{
-			printf("Bitrate FAILED\r\n");
-		}
-		printf("CNF1 = 0x%02X\r\n", MCP2515_Read(MCP_CNF1));
-		printf("CNF2 = 0x%02X\r\n", MCP2515_Read(MCP_CNF2));
-		printf("CNF3 = 0x%02X\r\n", MCP2515_Read(MCP_CNF3)); */
-
-
-		/* Tx Buffer Test */
+	   char buf[20];
+	   uint8_t len = (uint8_t)snprintf(buf, sizeof(buf), "Status=0x%02X\r\n", status);
+	   HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
+	   HAL_Delay(2000);
+	  	  */
 	  /*
+	   //Configuration Mode Test
+	  uint8_t status = MCP2515_Read(MCP_CANSTAT);
+
+	  char buf[30];
+	  uint8_t len;
+	  len = (uint8_t)snprintf(buf, sizeof(buf), "Status=0x%02X\r\n",status);
+	  HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
+
+	  if(MCP2515_SetConfigurationMode())
+	  {
+	      len = (uint8_t)snprintf(buf, sizeof(buf), "Config Mode OK\r\n");
+	  }
+	  else
+	  {
+	      len = (uint8_t)snprintf(buf, sizeof(buf), "Config Mode FAIL\r\n");
+	  }
+	  HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
+	  HAL_Delay(2000);
+	  */
+	  /* Successful -> Output = Bitrate OK CNF1=0x00 CNF2=0x90 CNF3=0x02
+	  //Set Bitrate Test
+	  char buf[30];
+	  uint8_t len;
+	  if(MCP2515_SetBitrate(MCP2515_BITRATE_500KBPS))
+	  {
+	      len = (uint8_t)snprintf(buf, sizeof(buf), "Bitrate OK\r\n");
+	  }
+	  else
+	  {
+	      len = (uint8_t)snprintf(buf, sizeof(buf), "Bitrate FAILED\r\n");
+	  }
+	  HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
+	  HAL_Delay(1000);
+	  len = (uint8_t)snprintf(buf, sizeof(buf), "CNF1=0x%02X\r\n", MCP2515_Read(MCP_CNF1));
+	  HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
+	  HAL_Delay(1000);
+	  len = (uint8_t)snprintf(buf, sizeof(buf), "CNF2=0x%02X\r\n", MCP2515_Read(MCP_CNF2));
+	  HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
+	  HAL_Delay(1000);
+	  len = (uint8_t)snprintf(buf, sizeof(buf), "CNF3=0x%02X\r\n", MCP2515_Read(MCP_CNF3));
+	  HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
+	  HAL_Delay(1000);
+	  */
+
+	  /*
+	   //Successful -> Output = 24 60 08
+		// Tx Buffer Test
 	  	  uint8_t txData[8] =
 	  	  {
 	  			  1,2,3,4,5,6,7,8
@@ -163,72 +192,58 @@ int main(void)
 				  8,
 				  txData
 	  	  );
-	  	  printf("%02X\n",MCP2515_Read(MCP_TXB0SIDH));
-			printf("%02X\n",MCP2515_Read(MCP_TXB0SIDL));
-			printf("%02X\n",MCP2515_Read(MCP_TXB0DLC));
+
+	  	  char buf[30];
+	  	  uint8_t len;
+
+	  	  len = (uint8_t)snprintf(buf, sizeof(buf), "%02X\r\n", MCP2515_Read(MCP_TXB0SIDH));
+	  	  HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
+	  	  HAL_Delay(1000);
+	  	  len= (uint8_t)snprintf(buf, sizeof(buf),"%02X\r\n",MCP2515_Read(MCP_TXB0SIDL));
+	  	  HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
+	  	  HAL_Delay(1000);
+	  	  len = (uint8_t)snprintf(buf, sizeof(buf), "%02X\r\n", MCP2515_Read(MCP_TXB0DLC));
+	  	  HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
+	  	  HAL_Delay(1000);
 	  	  */
-		 /* RST Test */
-		 /*MCP2515_Reset();
-
-		MCP2515_SetConfigurationMode();
-
-		MCP2515_SetBitrate(MCP2515_BITRATE_500KBPS);
-
-		MCP2515_SetLoopbackMode();
-
-		MCP2515_LoadTXBuffer();
-
-		MCP2515_RequestToSend();
-		*/
-	  //RX Buffer Text
-	  /*
-	  MCP2515_Frame_t rxFrame;
-
+		 // RST Test
 	  MCP2515_Reset();
+	  MCP2515_SetConfigurationMode();
+	  MCP2515_SetBitrate(MCP2515_BITRATE_500KBPS);
+	  MCP2515_SetLoopbackMode();
 
-	  if(!MCP2515_SetConfigurationMode())
-	  {
-	      printf("Configuration Mode Failed\r\n");
-	      while(1);
-	  }
-
-	  if(!MCP2515_SetBitrate(MCP2515_BITRATE_500KBPS))
-	  {
-	      printf("Bitrate Failed\r\n");
-	      while(1);
-	  }
-
-	  if(!MCP2515_SetLoopbackMode())
-	  {
-	      printf("Loopback Mode Failed\r\n");
-	      while(1);
-	  }
-
-	  MCP2515_LoadTXBuffer();
-
+	  uint8_t txData[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+	  MCP2515_LoadTXBuffer(0x123, 8, txData);
 	  MCP2515_RequestToSend();
 
-	  HAL_Delay(10);
+	  HAL_Delay(10);  //Wait to  MCP2515 frame processing
 
+	  MCP2515_Frame_t rxFrame;
 	  if(MCP2515_ReadRXBuffer(&rxFrame))
 	  {
-	      printf("CAN ID : 0x%03X\r\n", rxFrame.id);
-	      printf("DLC    : %d\r\n", rxFrame.dlc);
+	      char buf[30];
+	      uint8_t len;
 
-	      printf("DATA   : ");
-
+	      len = (uint8_t)snprintf(buf, sizeof(buf), "ID=0x%03X\r\n", rxFrame.id);
+	      HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
+	      HAL_Delay(1000);
+	      len = (uint8_t)snprintf(buf, sizeof(buf), "DLC=%d\r\n", rxFrame.dlc);
+	      HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
+	      HAL_Delay(1000);
 	      for(uint8_t i = 0; i < rxFrame.dlc; i++)
 	      {
-	          printf("%02X ", rxFrame.data[i]);
+	          len = (uint8_t)snprintf(buf, sizeof(buf), "D%d=%d\r\n", i, rxFrame.data[i]);
+	          HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
+	          HAL_Delay(1000);
 	      }
-
-	      printf("\r\n");
 	  }
 	  else
 	  {
-	      printf("RX Read Failed\r\n");
+	      char buf[30];
+	      uint8_t len = (uint8_t)snprintf(buf, sizeof(buf), "RX FAILED\r\n");
+	      HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
 	  }
-	  */
+
 
     /* USER CODE END WHILE */
 
