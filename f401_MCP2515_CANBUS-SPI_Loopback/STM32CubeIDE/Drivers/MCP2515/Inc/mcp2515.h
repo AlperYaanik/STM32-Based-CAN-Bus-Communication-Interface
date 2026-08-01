@@ -93,7 +93,7 @@ void MCP2515_Write(uint8_t address, uint8_t data);
 
 void MCP2515_BitModify(uint8_t address, uint8_t mask, uint8_t data);
 
-void MCP2515_SetLoopbackMode();
+bool MCP2515_SetLoopbackMode(void);
 
 bool MCP2515_SetConfigurationMode(void);
 

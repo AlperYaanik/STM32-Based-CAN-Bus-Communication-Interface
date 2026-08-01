@@ -9,6 +9,18 @@
 
 extern SPI_HandleTypeDef hspi1;
 
+static const MCP2515_BitTiming_t bitTiming8MHz[] = {
+    [MCP2515_BITRATE_125KBPS] = { .cnf1 = 0x01, .cnf2 = 0xB1, .cnf3 = 0x05 },
+    [MCP2515_BITRATE_250KBPS] = { .cnf1 = 0x00, .cnf2 = 0xB1, .cnf3 = 0x05 },
+    [MCP2515_BITRATE_500KBPS] = { .cnf1 = 0x00, .cnf2 = 0x90, .cnf3 = 0x02 },
+};
+
+static const MCP2515_BitTiming_t bitTiming16MHz[] = {
+    [MCP2515_BITRATE_125KBPS] = { .cnf1 = 0x03, .cnf2 = 0xB1, .cnf3 = 0x05 },
+    [MCP2515_BITRATE_250KBPS] = { .cnf1 = 0x01, .cnf2 = 0xB1, .cnf3 = 0x05 },
+    [MCP2515_BITRATE_500KBPS] = { .cnf1 = 0x00, .cnf2 = 0xB1, .cnf3 = 0x05 },
+};
+
 //Make Low CS Pin
 static void MCP2515_CS_Low() {
 	HAL_GPIO_WritePin(MCP2515_CS_PORT, MCP2515_CS_PIN, GPIO_PIN_RESET);
@@ -90,7 +102,7 @@ void MCP2515_BitModify(uint8_t address, uint8_t mask, uint8_t data) {
 }
 
 //Switch to Loopback Mode
-void MCP2515_SetLoopbackMode()
+bool MCP2515_SetLoopbackMode()
 {
 	MCP2515_BitModify(
 			MCP_CANCTRL,

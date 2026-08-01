@@ -103,9 +103,12 @@ int main(void)
   {
 	  //Mod Okuma Modülü
 	  uint8_t mode;
+	  char buf[20];
+	  uint8_t len;
 	  mode = MCP2515_Read(MCP_CANCTRL);
-	  HAL_UART_Transmit(&huart1, (uint8_t *)buffer, strlen(buffer), HAL_MAX_DELAY);
-
+	  len = (uint8_t)snprintf(buf, sizeof(buf), "CANCTRL=0x%02X\r\n", mode);
+	  HAL_UART_Transmit(&huart1, (uint8_t*)buf, len, HAL_MAX_DELAY);
+	  HAL_Delay(1000);
 	  /*
 	  //Write Test
 	  MCP2515_Reset();
@@ -113,7 +116,7 @@ int main(void)
 	  MCP2515_Write(MCP_CANCTRL,0x80);
 
 	  uint8_t value = MCP2515_Read(MCP_CANCTRL);
-	  *\
+	  */
 	  /*
 	   //Status Test
 	   uint8_t status;
@@ -133,7 +136,7 @@ int main(void)
 	   {
 	       printf("Configuration Mode Failed\r\n");
 	   }
-	   *\
+	   */
 	   /*
 		if(MCP2515_SetBitrate(MCP2515_BITRATE_500KBPS))
 		{
@@ -145,7 +148,7 @@ int main(void)
 		}
 		printf("CNF1 = 0x%02X\r\n", MCP2515_Read(MCP_CNF1));
 		printf("CNF2 = 0x%02X\r\n", MCP2515_Read(MCP_CNF2));
-		printf("CNF3 = 0x%02X\r\n", MCP2515_Read(MCP_CNF3)); *\
+		printf("CNF3 = 0x%02X\r\n", MCP2515_Read(MCP_CNF3)); */
 
 
 		/* Tx Buffer Test */
