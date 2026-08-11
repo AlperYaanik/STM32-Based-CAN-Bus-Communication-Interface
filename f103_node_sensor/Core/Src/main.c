@@ -57,6 +57,8 @@ uint8_t RxData[8];
 uint32_t TxMailbox;
 //Create Message Variable for UART Message
 char msg[64];
+//Init failed packet counter variable
+volatile uint32_t droppedPackets = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -223,18 +225,20 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 	memcpy(TxData, RxData, sizeof(TxData));
 	if(HAL_CAN_GetTxMailboxesFreeLevel(hcan)>0)
 	    {
-	    			if(HAL_CAN_AddTxMessage(hcan, &TxHeader, TxData, &TxMailbox)!=HAL_OK)
-	    			{
-						  	  	  Error_Handler();
-					  	  	  }
-	    	 	  	  }
-	    	 	 else
-	    	 	 	 {
-	    	 	     	 droppedPackets++;
-	    	 	 	 }
-	      	 }
-
-	  }
+	    			if(HAL_CAN_AddTxMessage(
+	    					hcan,
+							&TxHeader,
+							TxData,
+							&TxMailbox) != HAL_OK)
+	    				{
+							Error_Handler();
+					  	}
+	   }
+	else
+	   {
+			droppedPackets++;
+	   }
+	}
 /* USER CODE END 4 */
 
 /**
