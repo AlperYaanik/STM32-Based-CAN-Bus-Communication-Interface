@@ -26,6 +26,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <string.h>
+#include "debug.h"
+#include "mpu6050.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -35,8 +37,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define IMU_CAN_ID    0x101
-#define NODE2_CAN_ID  0x200
+#define CAN_ID_ACCEL      0x101
+#define CAN_ID_GYRO       0x102
+#define CAN_TIMEOUT_MS    100
+#define SAMPLE_PERIOD_MS  100
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -47,18 +51,9 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-//Message Envelope Tx and Rx Configuration
 CAN_TxHeaderTypeDef TxHeader = {0};
-CAN_RxHeaderTypeDef RxHeader = {0};
-//Set 8 bytes data variables
 uint8_t TxData[8];
-uint8_t RxData[8];
-//Set Tx Mailbox Variable
 uint32_t TxMailbox;
-//Create Message Variable for UART Message
-char msg[64];
-//Init failed packet counter variable
-volatile uint32_t droppedPackets = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -69,7 +64,28 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+static void CAN_SendFrame(uint32_t stdId, const uint8_t *data, uint8_t dlc)
+{
+  uint32_t tick = HAL_GetTick();
 
+  while (HAL_CAN_GetTxMailboxesFreeLevel(&hcan) == 0)
+  {
+    if (HAL_GetTick() - tick > CAN_TIMEOUT_MS)
+    {
+      LOG("CAN TX timeout (id=0x%X)\r\n", (unsigned int)stdId);
+      return;
+    }
+  }
+
+  TxHeader.StdId = stdId;
+  TxHeader.DLC = dlc;
+  memcpy(TxData, data, dlc);
+
+  if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &TxMailbox) != HAL_OK)
+  {
+    LOG("CAN TX failed (id=0x%X)\r\n", (unsigned int)stdId);
+  }
+}
 /* USER CODE END 0 */
 
 /**
@@ -105,61 +121,73 @@ int main(void)
   MX_I2C1_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  //Can Filter Configuration
-  //Loopback Mode Filter Configuration and Selecting Filter Bank (0-13)
+  // CAN filtre yapılandırması: bu node artık sadece gönderiyor, filtre RX
+  // için gerekli değil ama zararsız - CubeMX konvansiyonuna uygun bırakıyoruz.
   CAN_FilterTypeDef canFilterConfig;
   canFilterConfig.FilterBank = 0;
-  //ID Mask Mode (for easy usages , ID list for betwwen specified intervals) and 32-bit scale configuration (for standard and extended IDs)
   canFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
   canFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
-  //Accept All Id (ie. 0x123<<5 for IMU sensor)
-  canFilterConfig.FilterIdHigh = (IMU_CAN_ID<<5);
-  canFilterConfig.FilterIdLow= 0x0000;
-  canFilterConfig.FilterMaskIdHigh = (0x7FF<<5);
+  canFilterConfig.FilterIdHigh = 0x0000;
+  canFilterConfig.FilterIdLow = 0x0000;
+  canFilterConfig.FilterMaskIdHigh = 0x0000;
   canFilterConfig.FilterMaskIdLow = 0x0000;
-  //Convention, one FIFO is enough for loopback mode, so we can use FIFO0
   canFilterConfig.FilterFIFOAssignment = CAN_FILTER_FIFO0;
-  //Must to ENABLE Filter Activation, otherwise the filter will not work
   canFilterConfig.FilterActivation = ENABLE;
-  //Have to configure for Dual CAN board. STM32F103 has only one, but have to filled because of the structure.
-  //So, we can use 14 for SlaveStartFilterBank (0-13 for Master, 14-27 for Slave)
   canFilterConfig.SlaveStartFilterBank = 14;
-  //Error Handling (HAL_OK = 0, HAL_ERROR = 1, HAL_BUSY = 2, HAL_TIMEOUT = 3), important for debugging
   if (HAL_CAN_ConfigFilter(&hcan, &canFilterConfig) != HAL_OK)
-  	  {
-	  	  Error_Handler();
-  	  }
-  //Start CAN Peripheral
-  if(HAL_CAN_Start(&hcan) != HAL_OK)
-  	  {
-      	  Error_Handler();
-  	  }
-  //If RX Fifo Fill level is equals to zero get the message
-  if(HAL_CAN_ActivateNotification(&hcan,CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK)
-  	  {
-	  	  Error_Handler();
-  	  }
-  //Standard ID (11 bits) for the message
-  TxHeader.StdId = NODE2_CAN_ID;
-  //Extended ID (29 bits) is not used, so we can set it to 0
+  {
+    Error_Handler();
+  }
+  if (HAL_CAN_Start(&hcan) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
   TxHeader.ExtId = 0x00;
-  //Standard ID is used, so we can set the IDE to CAN_ID_STD
   TxHeader.IDE = CAN_ID_STD;
-  //Data Frame is used, so we can set the RTR to CAN_RTR_DATA
   TxHeader.RTR = CAN_RTR_DATA;
-  //Selecting Bytes (Data Length Code), we send 8 bytes of data so we can set the DLC to 8
-  TxHeader.DLC = 8;
-  //Disable the Transmit Global Time, we don't need it for this example
   TxHeader.TransmitGlobalTime = DISABLE;
-  //Data to be sent, we can fill the TxData array with some values
 
-
+  if (!MPU6050_Init(&hi2c1))
+  {
+    LOG("MPU6050 init FAILED (WHO_AM_I mismatch or I2C error)\r\n");
+    Error_Handler();
+  }
+  LOG("MPU6050 OK\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    int16_t accel[3];
+    int16_t gyro[3];
+
+    if (MPU6050_ReadRaw(&hi2c1, accel, gyro))
+    {
+      uint8_t accelData[6];
+      uint8_t gyroData[6];
+
+      for (int i = 0; i < 3; i++)
+      {
+        accelData[2 * i]     = (uint8_t)(accel[i] >> 8);
+        accelData[2 * i + 1] = (uint8_t)(accel[i] & 0xFF);
+        gyroData[2 * i]      = (uint8_t)(gyro[i] >> 8);
+        gyroData[2 * i + 1]  = (uint8_t)(gyro[i] & 0xFF);
+      }
+
+      CAN_SendFrame(CAN_ID_ACCEL, accelData, sizeof(accelData));
+      CAN_SendFrame(CAN_ID_GYRO, gyroData, sizeof(gyroData));
+
+      LOG("accel=%d,%d,%d gyro=%d,%d,%d\r\n",
+          accel[0], accel[1], accel[2], gyro[0], gyro[1], gyro[2]);
+    }
+    else
+    {
+      LOG("MPU6050 read FAILED\r\n");
+    }
+
+    HAL_Delay(SAMPLE_PERIOD_MS);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -206,39 +234,7 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
-{
-	if(HAL_CAN_GetRxMessage(
-			hcan,
-			CAN_RX_FIFO0,
-			&RxHeader,
-			RxData) != HAL_OK)
-		{
-			Error_Handler();
-		}
 
-	if(RxHeader.StdId != IMU_CAN_ID)
-		{
-		return;
-		}
-	// IMU Packet
-	memcpy(TxData, RxData, sizeof(TxData));
-	if(HAL_CAN_GetTxMailboxesFreeLevel(hcan)>0)
-	    {
-	    			if(HAL_CAN_AddTxMessage(
-	    					hcan,
-							&TxHeader,
-							TxData,
-							&TxMailbox) != HAL_OK)
-	    				{
-							Error_Handler();
-					  	}
-	   }
-	else
-	   {
-			droppedPackets++;
-	   }
-	}
 /* USER CODE END 4 */
 
 /**

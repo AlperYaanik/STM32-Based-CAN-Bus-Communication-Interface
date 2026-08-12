@@ -117,6 +117,11 @@
 			<locationURI>PARENT-1-PROJECT_LOC/Core/Src/can.c</locationURI>
 		</link>
 		<link>
+			<name>Application/User/Core/debug.c</name>
+			<type>1</type>
+			<locationURI>PARENT-1-PROJECT_LOC/Core/Src/debug.c</locationURI>
+		</link>
+		<link>
 			<name>Application/User/Core/gpio.c</name>
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/Core/Src/gpio.c</locationURI>
@@ -130,6 +135,11 @@
 			<name>Application/User/Core/main.c</name>
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/Core/Src/main.c</locationURI>
+		</link>
+		<link>
+			<name>Application/User/Core/mpu6050.c</name>
+			<type>1</type>
+			<locationURI>PARENT-1-PROJECT_LOC/Core/Src/mpu6050.c</locationURI>
 		</link>
 		<link>
 			<name>Application/User/Core/stm32f1xx_hal_msp.c</name>
