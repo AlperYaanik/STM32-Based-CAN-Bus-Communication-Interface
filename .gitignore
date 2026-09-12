@@ -19,8 +19,9 @@ objects.list
 objects.mk
 sources.mk
 
-# IDE settings (machine-specific)
+# IDE settings and run configurations (machine-specific)
 **/.settings/
+*.launch
 
 # CubeMX generated project file (optional — keep .ioc, ignore this)
 .mxproject
