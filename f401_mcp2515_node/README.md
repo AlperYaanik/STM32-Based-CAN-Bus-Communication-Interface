@@ -83,6 +83,15 @@ MCP2515's maximum SPI clock drops from 10 MHz to 5 MHz, so SPI1 runs at 4 MHz. R
 "works, but drops a bit occasionally", which is far harder to diagnose than an outright
 failure.
 
+**One SPI transaction per frame, not forty.** Every register access goes through a
+single multi-byte `HAL_SPI_TransmitReceive` inside one CS-low window. This matters
+more than it sounds: the earlier byte-at-a-time driver spent **1.83 ms** reading one
+frame, of which only **82 µs** was the SPI transfer — the other 95 % was per-call HAL
+overhead on a 16 MHz core. Reception now uses `READ STATUS` (2 bytes) to find out
+whether anything is waiting, then `READ RX BUFFER` (14 bytes) to take the whole frame
+in one go. That instruction also clears the matching `RXnIF` flag as CS rises, so the
+read and the acknowledgement are a single operation rather than ten.
+
 **Reception is flag-driven.** `MCP2515_Receive` checks the `RX0IF`/`RX1IF` bits in
 `CANINTF` before reading anything, and clears the flag afterwards with a bit-modify so
 the other flags are untouched. Reading a buffer unconditionally would report stale

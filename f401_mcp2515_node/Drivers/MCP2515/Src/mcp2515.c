@@ -15,6 +15,15 @@ extern SPI_HandleTypeDef hspi1;
    idle bus, but it stretches while the bus is busy. */
 #define MCP2515_MODE_TIMEOUT_MS 20u
 
+/* Generous: the longest transaction here is 14 bytes, about 28 us at 4 MHz.
+   Reaching this timeout means the SPI peripheral is wedged, not that the
+   transfer was slow. */
+#define MCP2515_SPI_TIMEOUT_MS  10u
+
+/* Longest transaction: READ RX BUFFER - one command byte plus SIDH, SIDL,
+   EID8, EID0, DLC and eight data bytes. */
+#define MCP2515_MAX_TRANSFER    14u
+
 static const MCP2515_BitTiming_t bitTiming8MHz[] = {
     [MCP2515_BITRATE_125KBPS] = { .cnf1 = 0x01, .cnf2 = 0xB1, .cnf3 = 0x05 },
     [MCP2515_BITRATE_250KBPS] = { .cnf1 = 0x00, .cnf2 = 0xB1, .cnf3 = 0x05 },
@@ -32,83 +41,81 @@ static const MCP2515_BitTiming_t bitTiming16MHz[] = {
 };
 
 //Make Low CS Pin
-static void MCP2515_CS_Low() {
+static void MCP2515_CS_Low(void) {
 	HAL_GPIO_WritePin(MCP2515_CS_PORT, MCP2515_CS_PIN, GPIO_PIN_RESET);
 }
 
 //Make High CS Pin
-static void MCP2515_CS_High() {
+static void MCP2515_CS_High(void) {
 	HAL_GPIO_WritePin(MCP2515_CS_PORT, MCP2515_CS_PIN, GPIO_PIN_SET);
 }
 
-// Transmit Data via MCP2515 SPI-CAN BUS
-static uint8_t MCP2515_SPI_Transmit(uint8_t data) {
-	uint8_t Rx;
+/* One CS-low window, one HAL call, however many bytes the instruction needs.
 
-	HAL_SPI_TransmitReceive(&hspi1, &data, &Rx, 1, 100);
+   This replaces a byte-at-a-time helper, and the difference is not subtle.
+   Measured on hardware, reading one frame took about 40 separate single-byte
+   HAL_SPI_TransmitReceive calls costing 1.83 ms, of which only 82 us was the
+   SPI transfer itself - the other 95% was per-call HAL overhead on a 16 MHz
+   core. Batching removes that overhead rather than making the bus faster.
 
-	return Rx;
+   HAL_SPI_TransmitReceive needs a valid receive pointer even when the reply
+   is discarded, so write-style transactions still pass a scratch buffer. */
+static void MCP2515_SPI_Transfer(const uint8_t *tx, uint8_t *rx, uint16_t length)
+{
+    MCP2515_CS_Low();
+    HAL_SPI_TransmitReceive(&hspi1, (uint8_t *)tx, rx, length,
+                            MCP2515_SPI_TIMEOUT_MS);
+    MCP2515_CS_High();
 }
 
 // Reset MCP2515
-void MCP2515_Reset() {
-	MCP2515_CS_Low();
-	MCP2515_SPI_Transmit(0xC0);
-	MCP2515_CS_High();
-	HAL_Delay(10);
-	//MCP2515 Commands {RESET 0xC0, READ 0x03,WRITE 0x02, BIT MODIFY 0x05}
+void MCP2515_Reset(void)
+{
+    uint8_t tx = MCP2515_CMD_RESET;
+    uint8_t rx;
+
+    MCP2515_SPI_Transfer(&tx, &rx, 1);
+    HAL_Delay(10);
 }
 
-// Read From MCP2515
-uint8_t MCP2515_Read(uint8_t address) {
-	uint8_t value;
+// Read one register
+uint8_t MCP2515_Read(uint8_t address)
+{
+    uint8_t tx[3] = { MCP2515_CMD_READ, address, 0x00 };
+    uint8_t rx[3];
 
-	MCP2515_CS_Low();
+    MCP2515_SPI_Transfer(tx, rx, sizeof(tx));
 
-	MCP2515_SPI_Transmit(0x03);
-	MCP2515_SPI_Transmit(address);
-	value = MCP2515_SPI_Transmit(0x00);
-
-	MCP2515_CS_High();
-	return value;
+    return rx[2];
 }
 
 //Read Status From MCP2515
 uint8_t MCP2515_ReadStatus(void)
 {
-    uint8_t status;
+    uint8_t tx[2] = { MCP2515_CMD_READ_STATUS, 0x00 };
+    uint8_t rx[2];
 
-    MCP2515_CS_Low();
+    MCP2515_SPI_Transfer(tx, rx, sizeof(tx));
 
-    MCP2515_SPI_Transmit(0xA0);      // READ STATUS Command
-    status = MCP2515_SPI_Transmit(0x00);
-
-    MCP2515_CS_High();
-
-    return status;
+    return rx[1];
 }
+
 //Write Data to a Register
 void MCP2515_Write(uint8_t address, uint8_t data)
 {
-    MCP2515_CS_Low();
+    uint8_t tx[3] = { MCP2515_CMD_WRITE, address, data };
+    uint8_t rx[3];
 
-    MCP2515_SPI_Transmit(0x02);   // WRITE command
-    MCP2515_SPI_Transmit(address);
-    MCP2515_SPI_Transmit(data);
-
-    MCP2515_CS_High();
+    MCP2515_SPI_Transfer(tx, rx, sizeof(tx));
 }
 
-// Modify MCP2515 Bit (to LOOPBACK State) {CONFIGURATION,NORMAL,LOOPBACK,LISTEN ONLY}
-void MCP2515_BitModify(uint8_t address, uint8_t mask, uint8_t data) {
-	MCP2515_CS_Low();
+// Modify selected bits of a register, leaving the rest untouched
+void MCP2515_BitModify(uint8_t address, uint8_t mask, uint8_t data)
+{
+    uint8_t tx[4] = { MCP2515_CMD_BIT_MODIFY, address, mask, data };
+    uint8_t rx[4];
 
-	MCP2515_SPI_Transmit(0x05);
-	MCP2515_SPI_Transmit(address);
-	MCP2515_SPI_Transmit(mask);
-	MCP2515_SPI_Transmit(data);
-
-	MCP2515_CS_High();
+    MCP2515_SPI_Transfer(tx, rx, sizeof(tx));
 }
 
 /* Requests the mode, then waits until CANSTAT reports that the chip is
@@ -133,13 +140,13 @@ bool MCP2515_SetMode(uint8_t mode)
 }
 
 //Switch to Loopback Mode
-bool MCP2515_SetLoopbackMode()
+bool MCP2515_SetLoopbackMode(void)
 {
     return MCP2515_SetMode(MODE_LOOPBACK);
 }
 
 //Switch to Normal Mode
-bool MCP2515_SetNormalMode()
+bool MCP2515_SetNormalMode(void)
 {
     return MCP2515_SetMode(MODE_NORMAL);
 }
@@ -226,26 +233,35 @@ bool MCP2515_Init(MCP2515_Bitrate_t bitrate)
     return MCP2515_SetMode(MODE_NORMAL);
 }
 
-//Prepare TX Buffer to Send Message
+/* Loads identifier, DLC and data in one LOAD TX BUFFER transaction instead of
+   six register writes. This node never transmits, so the path is not
+   exercised on hardware here; it is kept consistent with the receive path
+   rather than left as the odd one out. */
 bool MCP2515_LoadTXBuffer(uint16_t id,
                           uint8_t length,
                           const uint8_t *data)
 {
-    if(length > 8)
-        return false;
+    uint8_t tx[MCP2515_MAX_TRANSFER] = {0};
+    uint8_t rx[MCP2515_MAX_TRANSFER];
 
-    MCP2515_Write(MCP_TXB0SIDH, id >> 3);
-    MCP2515_Write(MCP_TXB0SIDL, (id & 0x07) << 5);
-
-    MCP2515_Write(MCP_TXB0EID8, 0x00);
-    MCP2515_Write(MCP_TXB0EID0, 0x00);
-
-    MCP2515_Write(MCP_TXB0DLC, length);
-
-    for(uint8_t i = 0; i < length; i++)
+    if (length > 8)
     {
-        MCP2515_Write(MCP_TXB0D0 + i, data[i]);
+        return false;
     }
+
+    tx[0] = MCP2515_CMD_LOAD_TXB0;
+    tx[1] = (uint8_t)(id >> 3);            // SIDH: identifier bits 10:3
+    tx[2] = (uint8_t)((id & 0x07) << 5);   // SIDL: bits 2:0 in the top three
+    tx[3] = 0x00;                          // EID8, unused for standard frames
+    tx[4] = 0x00;                          // EID0
+    tx[5] = length;                        // DLC
+
+    for (uint8_t i = 0; i < length; i++)
+    {
+        tx[6 + i] = data[i];
+    }
+
+    MCP2515_SPI_Transfer(tx, rx, (uint16_t)(6u + length));
 
     return true;
 }
@@ -253,35 +269,10 @@ bool MCP2515_LoadTXBuffer(uint16_t id,
 //Select TxB0 to send
 void MCP2515_RequestToSend(void)
 {
-    MCP2515_CS_Low();
+    uint8_t tx = MCP2515_CMD_RTS_TXB0;
+    uint8_t rx;
 
-    MCP2515_SPI_Transmit(0x81);
-
-    MCP2515_CS_High();
-}
-
-/* RXB0 and RXB1 use the same register layout in the same order: SIDH, SIDL,
-   EID8, EID0, DLC, D0..D7. One function can therefore read either buffer by
-   offsetting from its SIDH address. */
-static void MCP2515_ReadFrameAt(uint8_t sidhAddress, MCP2515_Frame_t *frame)
-{
-    uint8_t sidh = MCP2515_Read(sidhAddress);
-    uint8_t sidl = MCP2515_Read(sidhAddress + 1);
-
-    /* 11-bit identifier: the top 8 bits live in SIDH, the low 3 in bits
-       7:5 of SIDL. */
-    frame->id = ((uint16_t)sidh << 3) | (uint16_t)(sidl >> 5);
-
-    frame->dlc = MCP2515_Read(sidhAddress + 4) & 0x0F;
-    if (frame->dlc > 8)
-    {
-        frame->dlc = 8;   // keep a corrupt DLC from overrunning data[]
-    }
-
-    for (uint8_t i = 0; i < frame->dlc; i++)
-    {
-        frame->data[i] = MCP2515_Read(sidhAddress + 5 + i);
-    }
+    MCP2515_SPI_Transfer(&tx, &rx, 1);
 }
 
 uint8_t MCP2515_ReadAndClearOverflow(void)
@@ -300,27 +291,48 @@ uint8_t MCP2515_ReadAndClearOverflow(void)
 
 bool MCP2515_Receive(MCP2515_Frame_t *frame)
 {
-    /* The old MCP2515_ReadRXBuffer read unconditionally and always returned
-       true, so stale or garbage buffer contents were reported as a fresh
-       frame even when nothing had arrived. Check CANINTF first instead. */
-    uint8_t flags = MCP2515_Read(MCP_CANINTF);
+    /* READ STATUS costs two bytes and reports both receive flags at once, so
+       the common case - nothing waiting - is a single short transaction. */
+    uint8_t status = MCP2515_ReadStatus();
+    uint8_t command;
 
-    if (flags & CANINTF_RX0IF)
+    if ((status & MCP2515_STATUS_RX0IF) != 0u)
     {
-        MCP2515_ReadFrameAt(MCP_RXB0SIDH, frame);
-        /* Without clearing the flag the same frame is read forever, and no
-           room is freed for the next one. BitModify clears the single bit
-           without disturbing the other flags. */
-        MCP2515_BitModify(MCP_CANINTF, CANINTF_RX0IF, 0x00);
-        return true;
+        command = MCP2515_CMD_READ_RXB0;
+    }
+    else if ((status & MCP2515_STATUS_RX1IF) != 0u)
+    {
+        command = MCP2515_CMD_READ_RXB1;
+    }
+    else
+    {
+        return false;
     }
 
-    if (flags & CANINTF_RX1IF)
+    /* One transaction for the whole buffer. Raising CS at the end also clears
+       the matching RXnIF flag, which is why no bit-modify follows: with this
+       instruction the read and the acknowledgement are the same operation.
+       Nine separate register reads plus a bit-modify used to do this job. */
+    uint8_t tx[MCP2515_MAX_TRANSFER] = {0};
+    uint8_t rx[MCP2515_MAX_TRANSFER];
+
+    tx[0] = command;
+    MCP2515_SPI_Transfer(tx, rx, MCP2515_MAX_TRANSFER);
+
+    /* rx[0] is clocked out while the command goes in. From rx[1] onwards:
+       SIDH, SIDL, EID8, EID0, DLC, then D0..D7. */
+    frame->id = ((uint16_t)rx[1] << 3) | (uint16_t)(rx[2] >> 5);
+
+    frame->dlc = rx[5] & 0x0F;
+    if (frame->dlc > 8)
     {
-        MCP2515_ReadFrameAt(MCP_RXB1SIDH, frame);
-        MCP2515_BitModify(MCP_CANINTF, CANINTF_RX1IF, 0x00);
-        return true;
+        frame->dlc = 8;   // keep a corrupt DLC from overrunning data[]
     }
 
-    return false;
+    for (uint8_t i = 0; i < frame->dlc; i++)
+    {
+        frame->data[i] = rx[6 + i];
+    }
+
+    return true;
 }

@@ -47,7 +47,7 @@
    frames. Set to 0 to keep the same traffic without the printing and see
    whether the overflows disappear. The once-a-second summary is printed
    either way. */
-#define LOG_EVERY_FRAME   1
+#define LOG_EVERY_FRAME   0
 
 #define STATS_PERIOD_MS   1000u
 /* ----------------------------------------------------------------------- */
@@ -72,6 +72,7 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+#if LOG_EVERY_FRAME
 static void PrintFrame(const MCP2515_Frame_t *frame)
 {
   int16_t axes[3];
@@ -97,6 +98,7 @@ static void PrintFrame(const MCP2515_Frame_t *frame)
         frame->data[4], frame->data[5], frame->data[6], frame->data[7]);
   }
 }
+#endif
 
 static void PrintBusDiagnostics(void)
 {

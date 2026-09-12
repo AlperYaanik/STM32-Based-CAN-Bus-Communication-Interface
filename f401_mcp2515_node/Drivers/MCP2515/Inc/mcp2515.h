@@ -11,6 +11,32 @@
 #include "main.h"
 #include <stdbool.h>
 
+/* SPI instruction set. Every transaction begins with one of these, sent
+   while CS is held low. */
+#define MCP2515_CMD_RESET        0xC0
+#define MCP2515_CMD_READ         0x03
+#define MCP2515_CMD_WRITE        0x02
+#define MCP2515_CMD_BIT_MODIFY   0x05
+#define MCP2515_CMD_READ_STATUS  0xA0
+#define MCP2515_CMD_RTS_TXB0     0x81
+
+/* LOAD TX BUFFER, starting at TXB0SIDH. Writes the identifier, DLC and data
+   in one transaction instead of six separate register writes. */
+#define MCP2515_CMD_LOAD_TXB0    0x40
+
+/* READ RX BUFFER, starting at RXBnSIDH. Two things make these worth using
+   over plain register reads: the whole buffer comes out in a single CS-low
+   sequence, and the matching CANINTF.RXnIF flag is cleared automatically
+   when CS rises - so no follow-up bit-modify is needed. */
+#define MCP2515_CMD_READ_RXB0    0x90
+#define MCP2515_CMD_READ_RXB1    0x94
+
+/* READ STATUS reply bits. Bits 0 and 1 mirror CANINTF.RX0IF / RX1IF, which
+   is all the receive path needs, and the command costs two bytes instead of
+   the three a register read would. */
+#define MCP2515_STATUS_RX0IF     0x01
+#define MCP2515_STATUS_RX1IF     0x02
+
 // Define Register Address
 #define MCP_CANSTAT   0x0E
 #define MCP_CANCTRL   0x0F
