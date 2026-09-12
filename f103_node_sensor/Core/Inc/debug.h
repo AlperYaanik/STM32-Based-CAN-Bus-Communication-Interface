@@ -5,8 +5,8 @@
 extern "C" {
 #endif
 
-/* Release derlemesinde 0 yapılınca LOG(...) çağrıları hiç derlenmez (no-op),
-   UART/vsnprintf maliyeti release'e karışmaz. */
+/* Set to 0 for release builds: every LOG(...) call compiles away to nothing,
+   so neither the UART traffic nor the vsnprintf cost ends up in the image. */
 #define DEBUG_ENABLED 1
 
 #if DEBUG_ENABLED

@@ -28,6 +28,7 @@
 #include <string.h>
 #include "debug.h"
 #include "mpu6050.h"
+#include "can_protocol.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -37,8 +38,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define CAN_ID_ACCEL      0x101
-#define CAN_ID_GYRO       0x102
+/* CAN_ID_ACCEL / CAN_ID_GYRO / CAN_AXES_DLC now live in can_protocol.h,
+   the file this node shares with the receiver (f401_mcp2515_node). */
 #define CAN_TIMEOUT_MS    100
 #define SAMPLE_PERIOD_MS  100
 /* USER CODE END PD */
@@ -121,8 +122,8 @@ int main(void)
   MX_I2C1_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  // CAN filtre yapılandırması: bu node artık sadece gönderiyor, filtre RX
-  // için gerekli değil ama zararsız - CubeMX konvansiyonuna uygun bırakıyoruz.
+  // CAN filter setup. This node only transmits, so a filter is not needed
+  // for reception; it is harmless and follows the CubeMX convention.
   CAN_FilterTypeDef canFilterConfig;
   canFilterConfig.FilterBank = 0;
   canFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
@@ -165,16 +166,13 @@ int main(void)
 
     if (MPU6050_ReadRaw(&hi2c1, accel, gyro))
     {
-      uint8_t accelData[6];
-      uint8_t gyroData[6];
+      uint8_t accelData[CAN_AXES_DLC];
+      uint8_t gyroData[CAN_AXES_DLC];
 
-      for (int i = 0; i < 3; i++)
-      {
-        accelData[2 * i]     = (uint8_t)(accel[i] >> 8);
-        accelData[2 * i + 1] = (uint8_t)(accel[i] & 0xFF);
-        gyroData[2 * i]      = (uint8_t)(gyro[i] >> 8);
-        gyroData[2 * i + 1]  = (uint8_t)(gyro[i] & 0xFF);
-      }
+      /* Packing lives in the shared header now; CAN_UnpackAxes on the
+         receiving side is its exact inverse, and the two change together. */
+      CAN_PackAxes(accel, accelData);
+      CAN_PackAxes(gyro, gyroData);
 
       CAN_SendFrame(CAN_ID_ACCEL, accelData, sizeof(accelData));
       CAN_SendFrame(CAN_ID_GYRO, gyroData, sizeof(gyroData));

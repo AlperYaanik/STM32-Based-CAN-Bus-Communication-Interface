@@ -8,8 +8,8 @@ extern "C" {
 #include "main.h"
 #include <stdbool.h>
 
-/* AD0 pin GND'ye bağlıyken 7-bit adres 0x68'dir. HAL_I2C_Mem_* fonksiyonları
-   adresi <<1 kaydırılmış (8-bit) haliyle bekler. */
+/* The 7-bit address is 0x68 with the AD0 pin tied to GND. The HAL_I2C_Mem_*
+   functions expect the address already shifted left by one (8-bit form). */
 #define MPU6050_I2C_ADDR (0x68 << 1)
 
 bool MPU6050_Init(I2C_HandleTypeDef *hi2c);
