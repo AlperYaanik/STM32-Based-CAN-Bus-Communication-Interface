@@ -102,6 +102,20 @@ matter what the firmware does. Mount the breakout to something rigid and tape th
 wires down a few centimetres away so their stiffness acts on the tape rather than
 on the board, then watch this number fall.
 
+**Measuring the achieved rate, not the requested one.** `HAL_Delay(SAMPLE_PERIOD_MS)`
+waits that long *on top of* however long sampling, transmitting and logging took, so
+the real period is always longer than requested — and it varies, because a longer line
+of digits takes longer to push out of the UART. The loop therefore counts samples and
+reports once a second what it actually achieved:
+
+```
+[tx] achieved 9.6 Hz of 10.0 Hz, txfail=0 rdfail=0
+```
+
+`SAMPLE_PERIOD_MS` and `LOG_EVERY_SAMPLE` at the top of `main.c` are the knobs for
+pushing this until the loop can no longer keep up. See the root README for the
+measured results.
+
 **Wake-up settle delay.** After clearing `SLEEP`, the driver waits 100 ms before
 trusting readings, per the datasheet's start-up recommendation.
 

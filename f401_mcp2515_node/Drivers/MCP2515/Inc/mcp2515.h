@@ -68,6 +68,12 @@ typedef struct
 #define CANINTF_RX0IF   0x01
 #define CANINTF_RX1IF   0x02
 
+/* EFLG overflow bits. The chip sets these when a frame arrives with no free
+   receive buffer to put it in - in other words, they are the hardware's own
+   count of frames this node lost. They are sticky and must be cleared. */
+#define EFLG_RX0OVR     0x40
+#define EFLG_RX1OVR     0x80
+
 /* RXBnCTRL bits */
 #define RXBCTRL_RXM_ANY 0x60   // masks/filters off: accept every valid frame
 #define RXB0CTRL_BUKT   0x04   // if RXB0 is full, put the next frame in RXB1
@@ -144,5 +150,11 @@ void MCP2515_RequestToSend(void);
 /* Non-blocking. Returns true only if a frame was actually received; it then
    fills *frame and clears the matching RXnIF flag. Otherwise false. */
 bool MCP2515_Receive(MCP2515_Frame_t *frame);
+
+/* Returns the EFLG_RXnOVR bits that were set since the last call, and clears
+   them. Non-zero means the receive buffers were full when a frame arrived and
+   that frame was dropped - the direct, hardware-reported measure of whether
+   this node is draining the controller fast enough. */
+uint8_t MCP2515_ReadAndClearOverflow(void);
 
 #endif /* DRIVERS_MCP2515_INC_MCP2515_H_ */

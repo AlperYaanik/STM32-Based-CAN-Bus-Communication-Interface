@@ -94,6 +94,20 @@ frames roughly 300 µs apart, while this node is busy pushing a line out of the 
 Without `BUKT` set in `RXB0CTRL`, the second frame is lost to an overflow and only
 `ACCEL` lines appear.
 
+**Measuring lost frames from the hardware, not by guessing.** The MCP2515 sets
+`EFLG_RX0OVR`/`RX1OVR` when a frame arrives and both receive buffers are already full.
+Those bits are the controller's own record of frames this node dropped, so
+`MCP2515_ReadAndClearOverflow` reads and clears them and the loop reports once a
+second:
+
+```
+[rx] 19.2 frames/s (9.6 samples/s), overflow=0
+```
+
+Comparing this figure against the sender's `[tx]` line gives the loss directly, and the
+overflow count confirms the mechanism. `LOG_EVERY_FRAME` at the top of `main.c` turns
+the per-frame printing off so the same traffic can be run without it.
+
 **Mode changes are polled, not assumed.** Entering normal mode does not complete until
 the chip has seen 11 consecutive recessive bits on the bus, so `MCP2515_SetMode` polls
 `CANSTAT` with a timeout rather than reading it once.

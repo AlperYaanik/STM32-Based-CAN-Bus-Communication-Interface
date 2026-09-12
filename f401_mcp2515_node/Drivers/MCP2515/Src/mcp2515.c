@@ -284,6 +284,20 @@ static void MCP2515_ReadFrameAt(uint8_t sidhAddress, MCP2515_Frame_t *frame)
     }
 }
 
+uint8_t MCP2515_ReadAndClearOverflow(void)
+{
+    uint8_t overflow = MCP2515_Read(MCP_EFLG) & (EFLG_RX0OVR | EFLG_RX1OVR);
+
+    if (overflow != 0u)
+    {
+        /* Writing zeros through a bit-modify clears only these two bits and
+           leaves the error-passive and bus-off flags alone. */
+        MCP2515_BitModify(MCP_EFLG, EFLG_RX0OVR | EFLG_RX1OVR, 0x00);
+    }
+
+    return overflow;
+}
+
 bool MCP2515_Receive(MCP2515_Frame_t *frame)
 {
     /* The old MCP2515_ReadRXBuffer read unconditionally and always returned

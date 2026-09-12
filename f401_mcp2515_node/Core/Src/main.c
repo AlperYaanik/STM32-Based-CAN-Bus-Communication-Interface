@@ -40,6 +40,17 @@
 /* If no frame arrives for this long, dump the bus state (error counters).
    The F103 sends at 10 Hz, so a healthy link delivers a frame every 100 ms. */
 #define LINK_SILENCE_MS   1000u
+
+/* ---- Rate experiment knobs --------------------------------------------
+   Per-frame UART line, about 3.5 ms at 115200 baud. While it is in flight
+   this loop is not draining the MCP2515, whose receive buffers hold only two
+   frames. Set to 0 to keep the same traffic without the printing and see
+   whether the overflows disappear. The once-a-second summary is printed
+   either way. */
+#define LOG_EVERY_FRAME   1
+
+#define STATS_PERIOD_MS   1000u
+/* ----------------------------------------------------------------------- */
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -151,6 +162,9 @@ int main(void)
       (unsigned int)CAN_ID_ACCEL, (unsigned int)CAN_ID_GYRO);
 
   uint32_t lastFrameTick = HAL_GetTick();
+  uint32_t statsTick = HAL_GetTick();
+  uint32_t framesReceived = 0;
+  uint32_t overflows = 0;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -169,12 +183,41 @@ int main(void)
          even when nothing is watching the UART. */
       HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
 
+      framesReceived++;
+
+#if LOG_EVERY_FRAME
       PrintFrame(&frame);
+#endif
     }
     else if ((HAL_GetTick() - lastFrameTick) > LINK_SILENCE_MS)
     {
       PrintBusDiagnostics();
       lastFrameTick = HAL_GetTick();
+    }
+
+    /* Ask the controller whether it had to throw anything away. This is not
+       an estimate: EFLG_RXnOVR is set by the hardware itself when a frame
+       arrives and both receive buffers are already full, which is exactly the
+       failure this experiment is looking for. */
+    if (MCP2515_ReadAndClearOverflow() != 0u)
+    {
+      overflows++;
+    }
+
+    uint32_t elapsed = HAL_GetTick() - statsTick;
+    if (elapsed >= STATS_PERIOD_MS)
+    {
+      /* Two frames per sample, so the sample rate is half the frame rate. */
+      uint32_t frameTenths = (framesReceived * 10000u) / elapsed;
+
+      LOG("[rx] %u.%u frames/s (%u.%u samples/s), overflow=%u\r\n",
+          (unsigned int)(frameTenths / 10u), (unsigned int)(frameTenths % 10u),
+          (unsigned int)(frameTenths / 20u), (unsigned int)((frameTenths / 2u) % 10u),
+          (unsigned int)overflows);
+
+      framesReceived = 0;
+      overflows = 0;
+      statsTick = HAL_GetTick();
     }
     /* USER CODE END WHILE */
 

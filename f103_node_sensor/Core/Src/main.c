@@ -41,7 +41,20 @@
 /* CAN_ID_ACCEL / CAN_ID_GYRO / CAN_AXES_DLC now live in can_protocol.h,
    the file this node shares with the receiver (f401_mcp2515_node). */
 #define CAN_TIMEOUT_MS    100
+
+/* ---- Rate experiment knobs --------------------------------------------
+   Requested sampling period. 100 ms = 10 Hz is the normal setting; drop it
+   to 10 or 5 to push the loop until it can no longer keep up. */
 #define SAMPLE_PERIOD_MS  100
+
+/* Per-sample UART line. This is the expensive part - about 3.5 ms at 115200
+   baud - and it sits directly in the sampling path. Set to 0 to run the same
+   rate without it and see how much of the shortfall it was responsible for.
+   The once-a-second summary is printed either way. */
+#define LOG_EVERY_SAMPLE  1
+
+#define STATS_PERIOD_MS   1000u
+/* ----------------------------------------------------------------------- */
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -55,6 +68,12 @@
 CAN_TxHeaderTypeDef TxHeader = {0};
 uint8_t TxData[8];
 uint32_t TxMailbox;
+
+/* Rate-experiment counters, reset every STATS_PERIOD_MS. */
+static uint32_t samples;
+static uint32_t txFailures;
+static uint32_t readFailures;
+static uint32_t statsTick;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -65,7 +84,9 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-static void CAN_SendFrame(uint32_t stdId, const uint8_t *data, uint8_t dlc)
+/* Returns false when the frame could not be handed to the controller, so the
+   caller can count losses instead of only watching them scroll past. */
+static bool CAN_SendFrame(uint32_t stdId, const uint8_t *data, uint8_t dlc)
 {
   uint32_t tick = HAL_GetTick();
 
@@ -74,7 +95,7 @@ static void CAN_SendFrame(uint32_t stdId, const uint8_t *data, uint8_t dlc)
     if (HAL_GetTick() - tick > CAN_TIMEOUT_MS)
     {
       LOG("CAN TX timeout (id=0x%X)\r\n", (unsigned int)stdId);
-      return;
+      return false;
     }
   }
 
@@ -85,7 +106,10 @@ static void CAN_SendFrame(uint32_t stdId, const uint8_t *data, uint8_t dlc)
   if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &TxMailbox) != HAL_OK)
   {
     LOG("CAN TX failed (id=0x%X)\r\n", (unsigned int)stdId);
+    return false;
   }
+
+  return true;
 }
 /* USER CODE END 0 */
 
@@ -183,6 +207,8 @@ int main(void)
   }
   /* USER CODE END 2 */
 
+  statsTick = HAL_GetTick();
+
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
@@ -200,15 +226,52 @@ int main(void)
       CAN_PackAxes(accel, accelData);
       CAN_PackAxes(gyro, gyroData);
 
-      CAN_SendFrame(CAN_ID_ACCEL, accelData, sizeof(accelData));
-      CAN_SendFrame(CAN_ID_GYRO, gyroData, sizeof(gyroData));
+      if (!CAN_SendFrame(CAN_ID_ACCEL, accelData, sizeof(accelData)))
+      {
+        txFailures++;
+      }
+      if (!CAN_SendFrame(CAN_ID_GYRO, gyroData, sizeof(gyroData)))
+      {
+        txFailures++;
+      }
 
+      samples++;
+
+#if LOG_EVERY_SAMPLE
       LOG("accel=%d,%d,%d gyro=%d,%d,%d\r\n",
           accel[0], accel[1], accel[2], gyro[0], gyro[1], gyro[2]);
+#endif
     }
     else
     {
+      readFailures++;
       LOG("MPU6050 read FAILED\r\n");
+    }
+
+    /* Once a second, report what the loop ACTUALLY achieved rather than what
+       it was asked for. The gap between the two is the point of the whole
+       experiment: HAL_Delay waits SAMPLE_PERIOD_MS *on top of* however long
+       sampling, transmitting and logging took, so the real period is always
+       longer than requested - and it varies, because a longer line of digits
+       takes longer to push out of the UART. */
+    uint32_t elapsed = HAL_GetTick() - statsTick;
+    if (elapsed >= STATS_PERIOD_MS)
+    {
+      /* Tenths of Hz in integer arithmetic: newlib-nano has no %f by default
+         and pulling in floating-point printf for one diagnostic line is not
+         a trade worth making. */
+      uint32_t achievedTenths = (samples * 10000u) / elapsed;
+      uint32_t requestedTenths = 10000u / SAMPLE_PERIOD_MS;
+
+      LOG("[tx] achieved %u.%u Hz of %u.%u Hz, txfail=%u rdfail=%u\r\n",
+          (unsigned int)(achievedTenths / 10u), (unsigned int)(achievedTenths % 10u),
+          (unsigned int)(requestedTenths / 10u), (unsigned int)(requestedTenths % 10u),
+          (unsigned int)txFailures, (unsigned int)readFailures);
+
+      samples = 0;
+      txFailures = 0;
+      readFailures = 0;
+      statsTick = HAL_GetTick();
     }
 
     HAL_Delay(SAMPLE_PERIOD_MS);
