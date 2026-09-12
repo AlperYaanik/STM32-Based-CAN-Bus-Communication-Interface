@@ -155,6 +155,21 @@ int main(void)
     Error_Handler();
   }
   LOG("MPU6050 OK\r\n");
+
+  /* Calibration failure is not fatal: the bias stays at zero, the node keeps
+     streaming, and the log says the data is uncorrected. Halting here would
+     trade a known accuracy loss for a dead node. */
+  LOG("calibrating gyro - keep the board still...\r\n");
+  if (MPU6050_CalibrateGyro(&hi2c1))
+  {
+    int16_t bias[3];
+    MPU6050_GetGyroBias(bias);
+    LOG("gyro bias = %d,%d,%d LSB\r\n", bias[0], bias[1], bias[2]);
+  }
+  else
+  {
+    LOG("gyro calibration FAILED - board moved or I2C error, bias left at 0\r\n");
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */

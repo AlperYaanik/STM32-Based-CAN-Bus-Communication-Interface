@@ -9,7 +9,8 @@ The receiving end is [`f401_mcp2515_node`](../f401_mcp2515_node).
 
 ## What it does
 
-Once per 100 ms cycle:
+At start-up the gyroscope zero-rate offset is measured over ~2.5 s with the board
+held still, and subtracted from every later reading. Then, once per 100 ms cycle:
 
 1. Read all six axes in a **single 14-byte I²C burst** starting at `ACCEL_XOUT_H`.
    One transaction rather than three means the accelerometer and gyroscope samples
@@ -23,7 +24,7 @@ Once per 100 ms cycle:
 
 | File | Purpose |
 |---|---|
-| `Core/Src/mpu6050.c` | IMU driver: wake, identity check, burst read |
+| `Core/Src/mpu6050.c` | IMU driver: wake, identity check, burst read, gyro bias calibration |
 | `Core/Src/debug.c` | `LOG(...)` over USART1, compiled out when `DEBUG_ENABLED` is 0 |
 | `Core/Inc/can_protocol.h` | Frame format shared with the receiver — **must stay byte-identical in both projects** |
 
@@ -60,8 +61,10 @@ The MPU6050's `AD0` pin must be tied low, giving 7-bit address `0x68`.
 
 ```
 MPU6050 OK
-accel=-12616,-9604,4032 gyro=-477,-95,-4
-accel=-12620,-9576,4116 gyro=-456,-50,8
+calibrating gyro - keep the board still...
+gyro bias = -486,-144,-27 LSB
+accel=-12616,-9604,4032 gyro=9,-2,-1
+accel=-12620,-9576,4116 gyro=-7,4,3
 ```
 
 At rest the accelerometer vector magnitude should come out near 16384 LSB, which is 1 g
@@ -80,6 +83,16 @@ sampling. The cost is that an unacknowledged frame is lost silently.
 `read FAILED` log branch can never execute — the board simply appears dead, which is
 the least useful failure mode possible.
 
+**Gyro bias calibration, and why it can refuse.** At rest an uncalibrated MPU6050
+gyro here reads about -3.7 deg/s on X. Integrated into an angle that is 218 deg of
+drift per minute, so the offset has to go. `MPU6050_CalibrateGyro` averages 512
+samples spaced 5 ms apart and stores the result. The catch is that whatever the
+sensor reports while it runs *becomes the definition of "not moving"* - calibrating
+during movement bakes that movement in permanently. The routine therefore tracks the
+peak-to-peak spread of every axis and rejects the measurement if any of them moved
+too far, leaving the bias at zero. An uncalibrated sensor is honest; a wrongly
+calibrated one is not. A failure is logged but does not halt the node.
+
 **Wake-up settle delay.** After clearing `SLEEP`, the driver waits 100 ms before
 trusting readings, per the datasheet's start-up recommendation.
 
@@ -89,4 +102,5 @@ trusting readings, per the datasheet's start-up recommendation.
 |---|---|
 | No UART output at all | BOOT0 jumper left high, TX/RX not crossed, or no common ground |
 | `MPU6050 init FAILED` | Wiring, or `AD0` pulled high making the address `0x69` |
+| `gyro calibration FAILED` | The board was disturbed during the measurement, or an I2C read failed. Data still streams, uncorrected |
 | `CAN TX timeout` repeatedly | No second node acknowledging — check that the receiver is powered and the bus is terminated |
