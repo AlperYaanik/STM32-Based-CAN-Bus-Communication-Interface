@@ -32,6 +32,16 @@ bool MPU6050_CalibrateGyro(I2C_HandleTypeDef *hi2c);
    MPU6050_CalibrateGyro has succeeded. */
 void MPU6050_GetGyroBias(int16_t bias[3]);
 
+/* Peak-to-peak spread seen on each axis during the last calibration attempt,
+   in raw LSB, whether it succeeded or not.
+
+   This is a mechanical quality meter, not a sensor reading: it measures how
+   still the board actually was. A rigidly mounted board with strain-relieved
+   wiring settles to a small number; a board held by hand, or pulled around by
+   its own jumper wires, does not. Worth checking before trusting any
+   calibration result. */
+void MPU6050_GetGyroCalSpread(int16_t spread[3]);
+
 /* Reads all six axes in a single burst.
 
    "Raw" refers to the units: these are sensor counts, not engineering units.

@@ -37,6 +37,10 @@
 /* Zero-rate offset in raw LSB, subtracted from every gyro reading. */
 static int16_t gyroBias[3] = {0, 0, 0};
 
+/* Peak-to-peak movement observed during the last calibration attempt. Kept
+   even when the attempt is rejected - that is precisely when it is useful. */
+static int16_t gyroCalSpread[3] = {0, 0, 0};
+
 static int16_t Combine(uint8_t hi, uint8_t lo)
 {
   return (int16_t)((hi << 8) | lo);
@@ -141,12 +145,17 @@ bool MPU6050_CalibrateGyro(I2C_HandleTypeDef *hi2c)
     HAL_Delay(MPU6050_GYRO_CAL_PERIOD_MS);
   }
 
+  for (uint8_t axis = 0; axis < 3; axis++)
+  {
+    gyroCalSpread[axis] = (int16_t)((int32_t)highest[axis] - (int32_t)lowest[axis]);
+  }
+
   /* If any axis swung too far, the board was not still and the average is a
      measurement of the disturbance, not of the offset. Refuse it: an
      uncalibrated sensor is honest, a wrongly calibrated one is not. */
   for (uint8_t axis = 0; axis < 3; axis++)
   {
-    if ((int32_t)highest[axis] - (int32_t)lowest[axis] > MPU6050_GYRO_CAL_MAX_SPREAD)
+    if (gyroCalSpread[axis] > MPU6050_GYRO_CAL_MAX_SPREAD)
     {
       return false;
     }
@@ -165,6 +174,14 @@ void MPU6050_GetGyroBias(int16_t bias[3])
   for (uint8_t axis = 0; axis < 3; axis++)
   {
     bias[axis] = gyroBias[axis];
+  }
+}
+
+void MPU6050_GetGyroCalSpread(int16_t spread[3])
+{
+  for (uint8_t axis = 0; axis < 3; axis++)
+  {
+    spread[axis] = gyroCalSpread[axis];
   }
 }
 

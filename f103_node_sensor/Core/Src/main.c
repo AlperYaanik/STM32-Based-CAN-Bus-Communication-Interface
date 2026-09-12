@@ -160,15 +160,26 @@ int main(void)
      streaming, and the log says the data is uncorrected. Halting here would
      trade a known accuracy loss for a dead node. */
   LOG("calibrating gyro - keep the board still...\r\n");
-  if (MPU6050_CalibrateGyro(&hi2c1))
+
+  bool calibrated = MPU6050_CalibrateGyro(&hi2c1);
+  int16_t bias[3];
+  int16_t spread[3];
+  MPU6050_GetGyroBias(bias);
+  MPU6050_GetGyroCalSpread(spread);
+
+  /* The spread is printed either way. It says how still the board actually
+     was, which is the thing that decides whether the bias below is worth
+     anything - a hand-held or wire-tugged board cannot be calibrated well no
+     matter what the software does. */
+  LOG("  movement (peak-to-peak) = %d,%d,%d LSB\r\n", spread[0], spread[1], spread[2]);
+
+  if (calibrated)
   {
-    int16_t bias[3];
-    MPU6050_GetGyroBias(bias);
-    LOG("gyro bias = %d,%d,%d LSB\r\n", bias[0], bias[1], bias[2]);
+    LOG("  gyro bias = %d,%d,%d LSB\r\n", bias[0], bias[1], bias[2]);
   }
   else
   {
-    LOG("gyro calibration FAILED - board moved or I2C error, bias left at 0\r\n");
+    LOG("  calibration REFUSED - board not still, bias left at 0\r\n");
   }
   /* USER CODE END 2 */
 

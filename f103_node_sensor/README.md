@@ -62,7 +62,8 @@ The MPU6050's `AD0` pin must be tied low, giving 7-bit address `0x68`.
 ```
 MPU6050 OK
 calibrating gyro - keep the board still...
-gyro bias = -486,-144,-27 LSB
+  movement (peak-to-peak) = 86,113,90 LSB
+  gyro bias = -486,-144,-27 LSB
 accel=-12616,-9604,4032 gyro=9,-2,-1
 accel=-12620,-9576,4116 gyro=-7,4,3
 ```
@@ -92,6 +93,14 @@ during movement bakes that movement in permanently. The routine therefore tracks
 peak-to-peak spread of every axis and rejects the measurement if any of them moved
 too far, leaving the bias at zero. An uncalibrated sensor is honest; a wrongly
 calibrated one is not. A failure is logged but does not halt the node.
+
+The peak-to-peak movement is printed on every attempt, successful or not, which
+makes it a **mechanical quality meter for the setup**. Calibration is a mechanical
+problem before it is a software one: a board held down by a finger, or pulled
+around by the spring force of its own jumper wires, cannot be calibrated well no
+matter what the firmware does. Mount the breakout to something rigid and tape the
+wires down a few centimetres away so their stiffness acts on the tape rather than
+on the board, then watch this number fall.
 
 **Wake-up settle delay.** After clearing `SLEEP`, the driver waits 100 ms before
 trusting readings, per the datasheet's start-up recommendation.
