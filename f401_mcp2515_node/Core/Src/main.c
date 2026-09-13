@@ -166,7 +166,22 @@ int main(void)
   uint32_t lastFrameTick = HAL_GetTick();
   uint32_t statsTick = HAL_GetTick();
   uint32_t framesReceived = 0;
-  uint32_t overflows = 0;
+
+  /* Per-window breakdown of what actually got through. The totals alone hid
+     the fact that under load one message type was being starved: the old
+     "samples/s = frames / 2" figure assumed accel and gyro arrive in equal
+     numbers, which is exactly what stopped being true. */
+  uint32_t accelFrames = 0;
+  uint32_t gyroFrames = 0;
+  uint32_t otherFrames = 0;
+  uint32_t fromRxb0 = 0;
+  uint32_t fromRxb1 = 0;
+
+  /* The two overflow bits are counted separately: with rollover enabled a
+     frame that finds RXB0 full moves on to RXB1, so RX1OVR means both buffers
+     were full, while RX0OVR means RXB0 overflowed without rollover helping. */
+  uint32_t overflowRxb0 = 0;
+  uint32_t overflowRxb1 = 0;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -187,6 +202,28 @@ int main(void)
 
       framesReceived++;
 
+      if (frame.id == CAN_ID_ACCEL)
+      {
+        accelFrames++;
+      }
+      else if (frame.id == CAN_ID_GYRO)
+      {
+        gyroFrames++;
+      }
+      else
+      {
+        otherFrames++;
+      }
+
+      if (frame.buffer == 0u)
+      {
+        fromRxb0++;
+      }
+      else
+      {
+        fromRxb1++;
+      }
+
 #if LOG_EVERY_FRAME
       PrintFrame(&frame);
 #endif
@@ -201,24 +238,39 @@ int main(void)
        an estimate: EFLG_RXnOVR is set by the hardware itself when a frame
        arrives and both receive buffers are already full, which is exactly the
        failure this experiment is looking for. */
-    if (MCP2515_ReadAndClearOverflow() != 0u)
+    uint8_t overflow = MCP2515_ReadAndClearOverflow();
+    if ((overflow & EFLG_RX0OVR) != 0u)
     {
-      overflows++;
+      overflowRxb0++;
+    }
+    if ((overflow & EFLG_RX1OVR) != 0u)
+    {
+      overflowRxb1++;
     }
 
     uint32_t elapsed = HAL_GetTick() - statsTick;
     if (elapsed >= STATS_PERIOD_MS)
     {
-      /* Two frames per sample, so the sample rate is half the frame rate. */
       uint32_t frameTenths = (framesReceived * 10000u) / elapsed;
 
-      LOG("[rx] %u.%u frames/s (%u.%u samples/s), overflow=%u\r\n",
+      /* Counts are raw totals over the window (~1 s), so they read directly
+         as per-second figures. Overflow counts are sticky-flag detections,
+         not frames lost: several drops between two checks count once. */
+      LOG("[rx] %u.%u f/s accel=%u gyro=%u other=%u rxb0=%u rxb1=%u ovf0=%u ovf1=%u\r\n",
           (unsigned int)(frameTenths / 10u), (unsigned int)(frameTenths % 10u),
-          (unsigned int)(frameTenths / 20u), (unsigned int)((frameTenths / 2u) % 10u),
-          (unsigned int)overflows);
+          (unsigned int)accelFrames, (unsigned int)gyroFrames,
+          (unsigned int)otherFrames,
+          (unsigned int)fromRxb0, (unsigned int)fromRxb1,
+          (unsigned int)overflowRxb0, (unsigned int)overflowRxb1);
 
       framesReceived = 0;
-      overflows = 0;
+      accelFrames = 0;
+      gyroFrames = 0;
+      otherFrames = 0;
+      fromRxb0 = 0;
+      fromRxb1 = 0;
+      overflowRxb0 = 0;
+      overflowRxb1 = 0;
       statsTick = HAL_GetTick();
     }
     /* USER CODE END WHILE */

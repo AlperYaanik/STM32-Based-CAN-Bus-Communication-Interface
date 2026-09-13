@@ -294,16 +294,33 @@ bool MCP2515_Receive(MCP2515_Frame_t *frame)
     /* READ STATUS costs two bytes and reports both receive flags at once, so
        the common case - nothing waiting - is a single short transaction. */
     uint8_t status = MCP2515_ReadStatus();
+    bool rxb0Ready = (status & MCP2515_STATUS_RX0IF) != 0u;
+    bool rxb1Ready = (status & MCP2515_STATUS_RX1IF) != 0u;
     uint8_t command;
 
-    if ((status & MCP2515_STATUS_RX0IF) != 0u)
-    {
-        command = MCP2515_CMD_READ_RXB0;
-    }
-    else if ((status & MCP2515_STATUS_RX1IF) != 0u)
+#if MCP2515_SERVICE_RXB1_FIRST
+    if (rxb1Ready)
     {
         command = MCP2515_CMD_READ_RXB1;
+        frame->buffer = 1;
     }
+    else if (rxb0Ready)
+    {
+        command = MCP2515_CMD_READ_RXB0;
+        frame->buffer = 0;
+    }
+#else
+    if (rxb0Ready)
+    {
+        command = MCP2515_CMD_READ_RXB0;
+        frame->buffer = 0;
+    }
+    else if (rxb1Ready)
+    {
+        command = MCP2515_CMD_READ_RXB1;
+        frame->buffer = 1;
+    }
+#endif
     else
     {
         return false;

@@ -110,7 +110,20 @@ typedef struct
     uint8_t dlc;
     uint8_t data[8];
 
+    /* Which receive buffer the frame was taken from, 0 or 1. Not part of the
+       CAN frame itself; kept so reception behaviour under load can be
+       measured rather than inferred. */
+    uint8_t buffer;
+
 } MCP2515_Frame_t;
+
+/* Order in which MCP2515_Receive services the two receive buffers when both
+   hold a frame. 0 = RXB0 first (the natural order), 1 = RXB1 first.
+
+   This exists for one experiment: under saturation one message type survives
+   far more often than the other, and the suspected cause is this servicing
+   order. If flipping it flips the bias, the mechanism is confirmed. */
+#define MCP2515_SERVICE_RXB1_FIRST  0
 //Define Mode Values
 #define MODE_NORMAL   0x00
 #define MODE_SLEEP    0x20

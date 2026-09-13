@@ -110,11 +110,18 @@ Those bits are the controller's own record of frames this node dropped, so
 second:
 
 ```
-[rx] 19.2 frames/s (9.6 samples/s), overflow=0
+[rx] 20.0 f/s accel=10 gyro=10 other=0 rxb0=20 rxb1=0 ovf0=0 ovf1=0
 ```
 
-Comparing this figure against the sender's `[tx]` line gives the loss directly, and the
-overflow count confirms the mechanism. `LOG_EVERY_FRAME` at the top of `main.c` turns
+Frames are broken down by identifier and by the receive buffer they came from, and the
+two overflow bits are counted separately. The breakdown exists because the total alone
+hid something: under saturation one message type survived several times more often
+than the other, which a single "frames per second" figure cannot show. Comparing the
+total against the sender's `[tx]` line gives the loss; overflow counts are sticky-flag
+detections rather than frames lost, since several drops between two checks count once.
+
+`MCP2515_SERVICE_RXB1_FIRST` in `mcp2515.h` reverses the order in which the two buffers
+are serviced, to test whether that order is what decides which message type survives. `LOG_EVERY_FRAME` at the top of `main.c` turns
 the per-frame printing off so the same traffic can be run without it.
 
 **Mode changes are polled, not assumed.** Entering normal mode does not complete until
