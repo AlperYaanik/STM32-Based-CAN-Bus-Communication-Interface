@@ -103,13 +103,24 @@ static void PrintFrame(const MCP2515_Frame_t *frame)
 static void PrintBusDiagnostics(void)
 {
   /* EFLG carries the RX overflow / error-passive / bus-off flags, TEC and REC
-     are the error counters. If all of them read zero and still no frame shows
-     up, the bus itself is fine and the sender simply is not transmitting. */
-  LOG("waiting... CANSTAT=0x%02X EFLG=0x%02X TEC=%u REC=%u\r\n",
+     are the error counters.
+
+     All of those read 0x00 on a healthy idle bus - and they also read 0x00
+     when the SPI link has died, because a disconnected MISO line reads as
+     zeros. On their own they cannot tell "nobody is transmitting" from "I can
+     no longer hear the chip". CNF2 breaks the tie: it was written with a known
+     non-zero value during bring-up (0x90 for 500 kbit/s on an 8 MHz crystal),
+     so reading it back proves the link is still alive. */
+  uint8_t cnf2 = MCP2515_Read(MCP_CNF2);
+  bool spiAlive = (cnf2 != 0x00u) && (cnf2 != 0xFFu);
+
+  LOG("waiting... CANSTAT=0x%02X EFLG=0x%02X TEC=%u REC=%u CNF2=0x%02X spi=%s\r\n",
       (unsigned int)MCP2515_Read(MCP_CANSTAT),
       (unsigned int)MCP2515_Read(MCP_EFLG),
       (unsigned int)MCP2515_Read(MCP_TEC),
-      (unsigned int)MCP2515_Read(MCP_REC));
+      (unsigned int)MCP2515_Read(MCP_REC),
+      (unsigned int)cnf2,
+      spiAlive ? "ok" : "DEAD");
 }
 /* USER CODE END 0 */
 

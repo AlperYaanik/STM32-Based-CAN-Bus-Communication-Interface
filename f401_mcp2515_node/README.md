@@ -139,7 +139,8 @@ unacknowledged for ~10 ms at a time.
 | No UART output at all | UART problem, not CAN — the banner prints before any MCP2515 access |
 | `MCP2515 init FAILED - CANSTAT=0x00` | The chip is not answering: SPI wiring, supply or crystal |
 | `MCP2515 init FAILED - CANSTAT=0x80` | SPI works and the chip is alive, but it could not enter normal mode — the bus is stuck dominant, typically an unpowered transceiver or swapped CANH/CANL |
-| `waiting...` with all counters zero | Bus is healthy; the sender is not transmitting |
+| `waiting... ... spi=ok` with all counters zero | The receiver is fine and the bus is quiet: the sender is unpowered, not transmitting, or not connected to the bus |
+| `waiting... ... CNF2=0x00 spi=DEAD` | The SPI link to the MCP2515 failed after start-up — the zeros in the other fields are meaningless, check MISO, CS and the module's supply |
 
 ## Importing
 
