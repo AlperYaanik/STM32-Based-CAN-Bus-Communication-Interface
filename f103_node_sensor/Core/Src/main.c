@@ -53,6 +53,16 @@
    The once-a-second summary is printed either way. */
 #define LOG_EVERY_SAMPLE  0
 
+/* Order in which the two frames of each sample are handed to the controller.
+   0 = accel then gyro (normal), 1 = gyro then accel.
+
+   The bus is idle when the first frame is queued, so it starts transmitting
+   at once and the order on the wire follows the call order. Under receiver
+   saturation one message type survives ~90% of the time; swapping the order
+   tells whether that follows a frame's position in the pair (a timing
+   effect) or its identifier. */
+#define SEND_GYRO_FIRST   0
+
 #define STATS_PERIOD_MS   1000u
 /* ----------------------------------------------------------------------- */
 /* USER CODE END PD */
@@ -226,6 +236,16 @@ int main(void)
       CAN_PackAxes(accel, accelData);
       CAN_PackAxes(gyro, gyroData);
 
+#if SEND_GYRO_FIRST
+      if (!CAN_SendFrame(CAN_ID_GYRO, gyroData, sizeof(gyroData)))
+      {
+        txFailures++;
+      }
+      if (!CAN_SendFrame(CAN_ID_ACCEL, accelData, sizeof(accelData)))
+      {
+        txFailures++;
+      }
+#else
       if (!CAN_SendFrame(CAN_ID_ACCEL, accelData, sizeof(accelData)))
       {
         txFailures++;
@@ -234,6 +254,7 @@ int main(void)
       {
         txFailures++;
       }
+#endif
 
       samples++;
 
