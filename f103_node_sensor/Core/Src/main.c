@@ -261,12 +261,21 @@ int main(void)
          and pulling in floating-point printf for one diagnostic line is not
          a trade worth making. */
       uint32_t achievedTenths = (samples * 10000u) / elapsed;
+#if SAMPLE_PERIOD_MS > 0
       uint32_t requestedTenths = 10000u / SAMPLE_PERIOD_MS;
 
       LOG("[tx] achieved %u.%u Hz of %u.%u Hz, txfail=%u rdfail=%u\r\n",
           (unsigned int)(achievedTenths / 10u), (unsigned int)(achievedTenths % 10u),
           (unsigned int)(requestedTenths / 10u), (unsigned int)(requestedTenths % 10u),
           (unsigned int)txFailures, (unsigned int)readFailures);
+#else
+      /* A zero period means "run flat out", so there is no requested rate to
+         compare against - and computing one would divide by zero, which is
+         undefined behaviour in C (on this core it silently yields 0). */
+      LOG("[tx] achieved %u.%u Hz free-running, txfail=%u rdfail=%u\r\n",
+          (unsigned int)(achievedTenths / 10u), (unsigned int)(achievedTenths % 10u),
+          (unsigned int)txFailures, (unsigned int)readFailures);
+#endif
 
       samples = 0;
       txFailures = 0;
