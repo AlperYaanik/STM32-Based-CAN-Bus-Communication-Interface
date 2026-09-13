@@ -16,30 +16,94 @@ No RTOS, no third-party middleware: HAL plus hand-written drivers.
 
 ## Result
 
-The link is verified end to end on real hardware. With the sender board at rest, the
-receiver prints:
+The link is verified end to end on real hardware. The receiver prints decoded frames
+as they arrive:
 
 ```
 === f401 MCP2515 receiver node ===
 MCP2515 ready - 500 kbit/s, normal mode, listening for 0x101/0x102
-ACCEL  x=-12616  y= -9604  z=  4032
-GYRO   x=  -477  y=   -95  z=    -4
-ACCEL  x=-12620  y= -9576  z=  4116
-GYRO   x=  -456  y=   -50  z=     8
+ACCEL  x=  1200  y=    20  z= 17880
+GYRO   x=   -20  y=   -28  z=   -34
 ```
 
-The accelerometer vector magnitude is
+The values are physically consistent — with the board flat the Z axis carries gravity,
+X and Y sit near zero, and the gyroscope reads zero at rest once its bias is
+calibrated — which confirms the I²C burst read, the big-endian packing, the CAN
+transport and the MCP2515 reception together.
 
-```
-sqrt(12616² + 9604² + 4032²) = 16360 LSB
-16360 / 16384 LSB-per-g      = 0.9985 g
-```
+**A correction worth keeping visible.** An early check measured the accelerometer
+vector at 0.9985 g and was taken as proof of a calibrated sensor. It was orientation
+luck: the board was tilted, so the Z axis carried only a quarter of the vector.
+Re-measured flat and rigidly mounted, the magnitude is **1.099 g** — a ~10 % error
+isolated to Z, confirmed to be the sensor rather than mounting stress. A three-axis
+sensor cannot be validated from a single orientation. Accelerometer calibration is
+deliberately out of scope for this stage; the data path it travels through is not
+affected.
 
-which is gravity, to within 0.15 %. That single number confirms the whole chain at
-once: I²C burst read, big-endian packing, CAN transport, MCP2515 reception and
-unpacking all have to be correct for it to come out at 1 g. The strict `ACCEL`/`GYRO`
-alternation with no gaps separately confirms that the MCP2515 rollover buffer is
-doing its job.
+---
+
+## Measured performance
+
+Both nodes report once a second what they actually achieved. The receiver reads the
+MCP2515's own overflow flags, so dropped frames are reported by the hardware rather
+than estimated. Figures below are from hardware runs.
+
+### Where the bare-metal design breaks
+
+| Run | Sender config | Sender achieved | Receiver handled | Loss |
+|---|---|---|---|---|
+| D1 | 100 ms period, logging on | 10 Hz | all | 0 % |
+| D2 | 10 ms period, logging on | 70.8 Hz of 100 | all | 0 % |
+| D3 | 10 ms period, logging off | 92.3 Hz of 100 | all | 0 % |
+| D4 | free-running, logging on both nodes | 500 frames/s | 187 frames/s | **63 %** |
+| D5 | free-running, logging off both nodes | 2019 frames/s | 547 frames/s | **73 %** |
+
+D2 against D3 isolates the cost of one `printf` line in the sampling path: **21.5 Hz,
+about 30 % of the requested rate.** Neither the sensor, nor CAN, nor the CPU was the
+constraint.
+
+### Two different bottlenecks, two different fixes
+
+D5 showed the receiver still overflowing with all printing disabled. The remaining
+cost was the MCP2515 driver: about 40 single-byte `HAL_SPI_TransmitReceive` calls per
+frame, 1.83 ms, of which only 82 µs was SPI. Batching each instruction into one
+transfer and using `READ STATUS` / `READ RX BUFFER` cut that to 3 calls:
+
+| Run | Before driver fix | After driver fix |
+|---|---|---|
+| D4 (logging on) | 187 frames/s, 63 % loss | 249.5 frames/s, 50 % loss |
+| D5 (logging off) | 547 frames/s, 73 % loss | **2019 frames/s, 0 % loss** |
+
+This is the distinction the measurements were built to draw: **the driver bottleneck
+is fixed by a better driver, not by an RTOS.** What remains in D4 — logging sitting in
+the data path — is the part an RTOS addresses. The target for the RTOS version is D5's
+2019 frames/s *with* logging enabled, about 8× today's figure. The CAN bus itself was
+44 % loaded at the highest rate reached and never the limiting factor.
+
+### Loss under saturation is not random
+
+With the receiver saturated (D4), frames were broken down by identifier and by receive
+buffer. The sender emits accel and gyro in equal numbers and reports no transmit
+failures, yet:
+
+| Run | Change | accel | gyro | Survivor |
+|---|---|---|---|---|
+| T1 | baseline | 17 | 233 | second frame of each pair, 93 % |
+| T2 | receiver services RXB1 before RXB0 | 29 | 221 | second frame, 88 % |
+| T3 | sender transmits gyro before accel | 240 | 10 | second frame, 96 % |
+
+Reversing the receiver's buffer order (T2) only changed which buffer did the work — the
+other held one stale frame indefinitely, which also disabled rollover in practice — and
+left the bias intact. Reversing the transmit order (T3) inverted it. **Survival follows
+a frame's position in the pair, not its identity.** In a real system this is a message
+type being silently starved while the link appears healthy.
+
+Open question: the microscopic mechanism. Sender and receiver both run at exactly
+250.0 per second here, i.e. the two loops are phase-locked, and the receiver
+consistently finds the pair's second frame in its one active slot. That is not fully
+reconciled with the controller discarding new frames when a buffer is full. A
+receive queue removes the effect regardless, which is part of what the RTOS stage
+delivers.
 
 ---
 
@@ -187,13 +251,14 @@ Verifying without the full setup:
 
 ## Status and next steps
 
-Stage 1, bare-metal two-node communication, is complete and hardware-verified.
+Stage 1, bare-metal two-node communication, is complete and hardware-verified, and its
+limits are measured (see *Measured performance*). Gyroscope bias calibration is done.
 
 Planned next:
 
-- Gyroscope bias calibration. At rest the gyro reads about −3.7 °/s on X, an
-  uncalibrated zero offset well within the part's ±20 °/s specification. It is
-  harmless while raw counts are being shipped, but must be removed before any angle
-  integration.
-- Migration to FreeRTOS. The current polling loops were deliberately structured to
-  translate into tasks and queues.
+- **Migration to FreeRTOS**, receiver first. Target: 2019 frames/s with per-frame
+  logging enabled, against 249.5 frames/s today.
+- Fault recovery. The sender once went silent after cabling was changed and recovered
+  only on reset — either bxCAN bus-off with automatic recovery disabled, or an I²C bus
+  lock-up. Neither path currently recovers on its own.
+- Accelerometer calibration (six-position test), deferred.

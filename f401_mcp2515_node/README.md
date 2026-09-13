@@ -92,16 +92,17 @@ whether anything is waiting, then `READ RX BUFFER` (14 bytes) to take the whole 
 in one go. That instruction also clears the matching `RXnIF` flag as CS rises, so the
 read and the acknowledgement are a single operation rather than ten.
 
-**Reception is flag-driven.** `MCP2515_Receive` checks the `RX0IF`/`RX1IF` bits in
-`CANINTF` before reading anything, and clears the flag afterwards with a bit-modify so
-the other flags are untouched. Reading a buffer unconditionally would report stale
-contents as a fresh frame; failing to clear the flag would re-read the same frame
-forever and never free space for the next one.
+**Reception is flag-driven.** `MCP2515_Receive` asks `READ STATUS` which buffers hold a
+frame before reading anything, so stale buffer contents are never reported as a fresh
+frame. The flag is cleared by the `READ RX BUFFER` instruction itself as CS rises; a
+flag left set would re-read the same frame forever and never free room for the next.
 
-**Rollover into RXB1 is required, not optional.** The sender emits the accel and gyro
-frames roughly 300 µs apart, while this node is busy pushing a line out of the UART.
-Without `BUKT` set in `RXB0CTRL`, the second frame is lost to an overflow and only
-`ACCEL` lines appear.
+**Rollover (`BUKT`) helps only while both buffers are being drained.** The intent was
+that a frame arriving while RXB0 is full moves on to RXB1. Measured under saturation,
+that is not what happens: whichever buffer is serviced first does all the work, and
+the other ends up holding a single stale frame indefinitely, so rollover has nowhere to
+go and every excess frame overflows. Rollover buys headroom for a brief burst, not
+capacity. Sustained load needs the receive path to keep up, or a queue behind it.
 
 **Measuring lost frames from the hardware, not by guessing.** The MCP2515 sets
 `EFLG_RX0OVR`/`RX1OVR` when a frame arrives and both receive buffers are already full.

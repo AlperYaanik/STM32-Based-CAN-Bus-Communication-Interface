@@ -47,7 +47,7 @@
    frames. Set to 0 to keep the same traffic without the printing and see
    whether the overflows disappear. The once-a-second summary is printed
    either way. */
-#define LOG_EVERY_FRAME   0
+#define LOG_EVERY_FRAME   1
 
 #define STATS_PERIOD_MS   1000u
 /* ----------------------------------------------------------------------- */

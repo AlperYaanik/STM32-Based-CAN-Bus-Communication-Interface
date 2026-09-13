@@ -45,13 +45,13 @@
 /* ---- Rate experiment knobs --------------------------------------------
    Requested sampling period. 100 ms = 10 Hz is the normal setting; drop it
    to 10 or 5 to push the loop until it can no longer keep up. */
-#define SAMPLE_PERIOD_MS  0
+#define SAMPLE_PERIOD_MS  100
 
 /* Per-sample UART line. This is the expensive part - about 3.5 ms at 115200
    baud - and it sits directly in the sampling path. Set to 0 to run the same
    rate without it and see how much of the shortfall it was responsible for.
    The once-a-second summary is printed either way. */
-#define LOG_EVERY_SAMPLE  0
+#define LOG_EVERY_SAMPLE  1
 
 /* Order in which the two frames of each sample are handed to the controller.
    0 = accel then gyro (normal), 1 = gyro then accel.
