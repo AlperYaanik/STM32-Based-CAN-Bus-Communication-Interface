@@ -84,7 +84,8 @@ MCP2515 ready - 500 kbit/s, normal mode, listening for 0x101/0x102
 ACCEL  x=  1200  y=    20  z= 17880
 GYRO   x=   -20  y=   -28  z=   -34
 [rx] 20.0 f/s accel=10 gyro=10 other=0 rxb0=20 rxb1=0 ovf0=0 ovf1=0
-[os] logdrop=0 wakeups=20 heapmin=6120 stack_rx=310 stack_log=600
+[os] logdrop=0 wakeups=20 heapmin=9384 stack_rx=432 stack_log=821
+[cpu] busy=2.1% rx=0.9% log=1.1% idle=97.9%
 ```
 
 | Line | Meaning |
@@ -94,6 +95,13 @@ GYRO   x=   -20  y=   -28  z=   -34
 | `[rx] ... f/s ...` | Frames received in the last second, by identifier and by receive buffer, plus overflow detections |
 | `[rx] idle CANSTAT=.. EFLG=.. TEC=.. REC=.. CNF2=.. spi=..` | No frame in the last second; the controller's state |
 | `[os] logdrop=.. wakeups=.. heapmin=.. stack_rx=.. stack_log=..` | Health of the RTOS: frames received but not printed, INT wake-ups, lowest free heap ever (bytes), fewest stack words ever left unused per task |
+| `[cpu] busy=.. rx=.. log=.. idle=..` | Share of the last report window's CPU time: everything but Idle, CanRxTask, LogTask, and Idle. Measured by the kernel's run-time statistics clocked from the Cortex-M cycle counter |
+
+Reading `[cpu]`: interrupt time is charged to whichever task was interrupted, so `busy`
+slightly understates the load. And a task that never blocks soaks up every spare cycle
+— with per-frame logging on and the log queue permanently full, LogTask is always ready,
+Idle never runs and `busy` reads ~100 % regardless of real headroom. In that case `rx`
+is the number to read; `busy` is meaningful when LogTask spends its time asleep.
 
 `logdrop` above zero is not data loss: those frames were received and counted, only not
 printed. Loss shows up as `ovf0`/`ovf1`. With an idle `[rx]` line, `EFLG`, `TEC` and

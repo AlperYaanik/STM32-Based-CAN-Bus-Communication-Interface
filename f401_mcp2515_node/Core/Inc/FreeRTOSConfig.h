@@ -170,6 +170,23 @@ standard names. */
 
 /* USER CODE BEGIN Defines */
 /* Section where parameter definitions can be added (for instance, to override default ones in FreeRTOS.h) */
+
+/* Run-time statistics: the kernel adds up how long each task has been running,
+   so CPU load can be measured instead of inferred from late reports.
+
+   Enabled here, inside a user block, rather than in the CubeMX GUI: CubeMX
+   keeps this block across regeneration, and the clock behind the statistics
+   is application code (freertos.c) that CubeMX does not know about. If this is
+   ever switched on in CubeMX as well, remove these lines. */
+#define configGENERATE_RUN_TIME_STATS               1
+
+#if defined(__ICCARM__) || defined(__CC_ARM) || defined(__GNUC__)
+void     RunTimeStats_ConfigureTimer(void);
+uint32_t RunTimeStats_GetCounter(void);
+#endif
+#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS()    RunTimeStats_ConfigureTimer()
+#define portGET_RUN_TIME_COUNTER_VALUE()            RunTimeStats_GetCounter()
+
 /* USER CODE END Defines */
 
 #endif /* FREERTOS_CONFIG_H */

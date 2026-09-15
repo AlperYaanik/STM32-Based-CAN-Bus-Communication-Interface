@@ -90,6 +90,16 @@ typedef struct
    controller's status registers, so a silent bus is still diagnosable. */
 #define RX_IDLE_TIMEOUT_MS   1000u
 
+/* Room for every task the kernel reports: our two, Idle, and the timer
+   service task, with spare. uxTaskGetSystemState returns 0 if it is too small. */
+#define CPU_STATS_MAX_TASKS  8u
+
+/* The run-time clock is the Cortex-M CPU cycle counter shifted down by 4. At
+   16 MHz that makes one count roughly one microsecond. The unit cancels out
+   of every percentage, so a different clock speed changes nothing but the
+   scale. */
+#define RUN_TIME_SHIFT       4u
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -136,6 +146,9 @@ static void PrintReport(uint32_t elapsedMs, const RxCounters_t *now,
                         const RxCounters_t *before);
 #if LOG_EVERY_FRAME
 static void PrintFrame(const MCP2515_Frame_t *frame);
+#endif
+#if configGENERATE_RUN_TIME_STATS == 1
+static void PrintCpuLoad(void);
 #endif
 
 /* USER CODE END FunctionPrototypes */
@@ -274,6 +287,9 @@ void StartLogTask(void *argument)
       taskEXIT_CRITICAL();
 
       PrintReport((uint32_t)((now - lastReport) * portTICK_PERIOD_MS), &current, &before);
+#if configGENERATE_RUN_TIME_STATS == 1
+      PrintCpuLoad();
+#endif
 
       before = current;
       lastReport = now;
@@ -478,6 +494,136 @@ static void PrintReport(uint32_t elapsedMs, const RxCounters_t *now,
       (unsigned int)((canRxTask != NULL) ? uxTaskGetStackHighWaterMark(canRxTask) : 0u),
       (unsigned int)((logTask != NULL) ? uxTaskGetStackHighWaterMark(logTask) : 0u));
 }
+
+#if configGENERATE_RUN_TIME_STATS == 1
+
+/* ---- Run-time statistics clock ---------------------------------------------
+
+   The kernel needs a counter that advances much faster than its 1 ms tick;
+   otherwise a task that runs for 300 us and yields is never charged for it.
+   The Cortex-M4 already has one: DWT->CYCCNT counts every CPU cycle, needs no
+   timer peripheral and no interrupt.
+
+   CYCCNT is 32 bits and at 16 MHz wraps every ~268 s. The kernel keeps 32-bit
+   totals, so feeding it CYCCNT directly would corrupt them at every wrap. The
+   counter is therefore extended to 64 bits here - each call adds whatever has
+   elapsed since the previous one, which unsigned subtraction gets right across
+   a wrap - and shifted down to about one count per microsecond. That value
+   wraps only every ~71 minutes, and the percentages below use differences
+   over one report window, which unsigned arithmetic also handles.
+
+   The kernel calls RunTimeStats_GetCounter at every context switch and inside
+   uxTaskGetSystemState, never concurrently: the latter suspends the scheduler
+   first. Both of our tasks wake at least once a second, so a wrap of CYCCNT
+   can never go unobserved. */
+
+static uint32_t runTimeLastCycles;
+static uint64_t runTimeTotalCycles;
+
+void RunTimeStats_ConfigureTimer(void)
+{
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;   /* power up the DWT block */
+  DWT->CYCCNT = 0u;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
+  runTimeLastCycles = 0u;
+  runTimeTotalCycles = 0u;
+}
+
+uint32_t RunTimeStats_GetCounter(void)
+{
+  uint32_t cycles = DWT->CYCCNT;
+
+  runTimeTotalCycles += (uint32_t)(cycles - runTimeLastCycles);
+  runTimeLastCycles = cycles;
+
+  return (uint32_t)(runTimeTotalCycles >> RUN_TIME_SHIFT);
+}
+
+static uint32_t PercentTenths(uint32_t part, uint32_t whole)
+{
+  return (uint32_t)(((uint64_t)part * 1000u) / whole);
+}
+
+/* Prints how the last report window's CPU time was split.
+
+   busy is everything that was not the Idle task, so it is the load that
+   matters. Two things to keep in mind when reading it:
+   - Interrupt time is charged to whichever task was interrupted. An ISR that
+     fires while Idle is running counts as idle, so busy slightly understates
+     the true load.
+   - A task that is always ready absorbs every spare cycle. With per-frame
+     logging on and the queue permanently full, LogTask never blocks, Idle
+     never runs, and busy reads ~100% whatever the real headroom is. The rx
+     share is the informative number then; busy is informative when logging is
+     off and LogTask spends its time asleep. */
+static void PrintCpuLoad(void)
+{
+  static TaskStatus_t tasks[CPU_STATS_MAX_TASKS];
+  static uint32_t previousTotal;
+  static uint32_t previousRx;
+  static uint32_t previousLog;
+  static uint32_t previousIdle;
+
+  uint32_t total = 0u;
+  UBaseType_t count = uxTaskGetSystemState(tasks, CPU_STATS_MAX_TASKS, &total);
+
+  if (count == 0u)
+  {
+    LOG("[cpu] unavailable - CPU_STATS_MAX_TASKS too small\r\n");
+    return;
+  }
+
+  uint32_t rx = 0u;
+  uint32_t logRun = 0u;
+  uint32_t idle = 0u;
+
+  for (UBaseType_t i = 0u; i < count; i++)
+  {
+    if (tasks[i].xHandle == canRxTask)
+    {
+      rx = tasks[i].ulRunTimeCounter;
+    }
+    else if (tasks[i].xHandle == logTask)
+    {
+      logRun = tasks[i].ulRunTimeCounter;
+    }
+    /* Idle is recognised by priority rather than name: kernel 10.3.1 keeps the
+       idle task's name private to tasks.c, and nothing else runs at priority 0. */
+    else if (tasks[i].uxBasePriority == tskIDLE_PRIORITY)
+    {
+      idle = tasks[i].ulRunTimeCounter;
+    }
+  }
+
+  uint32_t windowTotal = total - previousTotal;
+  uint32_t windowRx = rx - previousRx;
+  uint32_t windowLog = logRun - previousLog;
+  uint32_t windowIdle = idle - previousIdle;
+
+  previousTotal = total;
+  previousRx = rx;
+  previousLog = logRun;
+  previousIdle = idle;
+
+  if (windowTotal == 0u)
+  {
+    return;
+  }
+
+  uint32_t idleTenths = PercentTenths(windowIdle, windowTotal);
+  uint32_t busyTenths = (idleTenths < 1000u) ? (1000u - idleTenths) : 0u;
+  uint32_t rxTenths = PercentTenths(windowRx, windowTotal);
+  uint32_t logTenths = PercentTenths(windowLog, windowTotal);
+
+  LOG("[cpu] busy=%u.%u%% rx=%u.%u%% log=%u.%u%% idle=%u.%u%%\r\n",
+      (unsigned int)(busyTenths / 10u), (unsigned int)(busyTenths % 10u),
+      (unsigned int)(rxTenths / 10u), (unsigned int)(rxTenths % 10u),
+      (unsigned int)(logTenths / 10u), (unsigned int)(logTenths % 10u),
+      (unsigned int)(idleTenths / 10u), (unsigned int)(idleTenths % 10u));
+}
+
+#endif /* configGENERATE_RUN_TIME_STATS == 1 */
 
 #if LOG_EVERY_FRAME
 static void PrintFrame(const MCP2515_Frame_t *frame)
