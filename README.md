@@ -107,6 +107,37 @@ reconciled with the controller discarding new frames when a buffer is full. A
 receive queue removes the effect regardless, which is part of what the RTOS stage
 delivers.
 
+### After moving the receiver onto FreeRTOS
+
+Same sender at full rate (2019 frames/s), same 16 MHz clock, same SPI driver — only
+the receiver's architecture changed. `logdrop` counts frames that were received and
+counted but not printed.
+
+| Run | Receiver | Per-frame logging | Received | Controller overflow | accel : gyro | logdrop |
+|---|---|---|---|---|---|---|
+| R0 | bare-metal | on | 249 frames/s | 248 /s | 49 : 200 | — |
+| **R1** | **FreeRTOS** | **on** | **2022 frames/s** | **0** | **1 : 1** | ~2000 /s |
+| R2 | FreeRTOS | off | 2023 frames/s | 0 | 1 : 1 | 0 |
+| R3 | FreeRTOS, sender at 10 Hz | on | 20 frames/s | 0 | 1 : 1 | 0 |
+
+**The receiver now takes every frame the sender emits, with logging on — 8.1× the
+bare-metal figure and no controller overflow.** The loss has moved exactly where the
+design put it: into log lines that are counted rather than into data. The starvation of
+one message type is gone too; with both receive buffers drained on every interrupt,
+frames alternate between RXB0 and RXB1 and accel and gyro arrive one-for-one.
+
+The measurement also exposed the next limit. In R1 the once-a-second report arrived
+every 4–5 seconds and only one frame line was printed per report: CanRxTask and its
+interrupts were using nearly all of the 16 MHz core, leaving the low-priority LogTask
+almost nothing. That is the priority scheme working as intended — the data path keeps
+every frame while the printer starves — but it also means there is no CPU headroom at
+this rate. Rates in R1 are still exact, because they are computed from the real elapsed
+time of each report window. The clock, left untouched for this comparison, is the
+obvious next variable.
+
+Resource use measured by the RTOS itself: 7.0 KB of the 16 KB heap, 80 of 512 stack
+words for CanRxTask and 205 of 1024 for LogTask.
+
 ---
 
 ## Architecture
@@ -258,10 +289,10 @@ limits are measured (see *Measured performance*). Gyroscope bias calibration is 
 
 Planned next:
 
-- **Migration to FreeRTOS**, receiver first — code in place, hardware measurement
-  pending. Baseline with logging on and the sender at full rate: 249 of 2019 frames/s
-  received. Target: all 2019 received with no controller overflow, any shortfall moved
-  to counted log lines.
+- **FreeRTOS receiver: done and measured** — all 2019 frames/s received with logging
+  on, against 249 bare-metal. Next on this node: measure CPU load directly and raise the
+  clock from 16 MHz, since receiving at this rate now consumes nearly the whole core.
+- FreeRTOS on the sender.
 - Fault recovery. The sender once went silent after cabling was changed and recovered
   only on reset — either bxCAN bus-off with automatic recovery disabled, or an I²C bus
   lock-up. Neither path currently recovers on its own.
