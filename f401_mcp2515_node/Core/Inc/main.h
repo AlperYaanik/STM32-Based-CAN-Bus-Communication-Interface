@@ -57,6 +57,9 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define MCP2515_INT_Pin GPIO_PIN_0
+#define MCP2515_INT_GPIO_Port GPIOB
+#define MCP2515_INT_EXTI_IRQn EXTI0_IRQn
 
 /* USER CODE BEGIN Private defines */
 
