@@ -38,20 +38,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-/* If no frame arrives for this long, dump the bus state (error counters).
-   The F103 sends at 10 Hz, so a healthy link delivers a frame every 100 ms. */
-#define LINK_SILENCE_MS   1000u
-
-/* ---- Rate experiment knobs --------------------------------------------
-   Per-frame UART line, about 3.5 ms at 115200 baud. While it is in flight
-   this loop is not draining the MCP2515, whose receive buffers hold only two
-   frames. Set to 0 to keep the same traffic without the printing and see
-   whether the overflows disappear. The once-a-second summary is printed
-   either way. */
-#define LOG_EVERY_FRAME   1
-
-#define STATS_PERIOD_MS   1000u
-/* ----------------------------------------------------------------------- */
+/* The receive loop, its statistics and the experiment knobs now live in
+   freertos.c, split between CanRxTask and LogTask. */
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -74,56 +62,6 @@ void MX_FREERTOS_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#if LOG_EVERY_FRAME
-static void PrintFrame(const MCP2515_Frame_t *frame)
-{
-  int16_t axes[3];
-
-  /* Does the frame match the contract? A known ID carrying an unexpected DLC
-     means the sender changed; print that distinguishably instead of silently
-     decoding it wrong. */
-  if (frame->dlc == CAN_AXES_DLC &&
-      (frame->id == CAN_ID_ACCEL || frame->id == CAN_ID_GYRO))
-  {
-    CAN_UnpackAxes(frame->data, axes);
-
-    LOG("%s  x=%6d  y=%6d  z=%6d\r\n",
-        (frame->id == CAN_ID_ACCEL) ? "ACCEL" : "GYRO ",
-        axes[0], axes[1], axes[2]);
-  }
-  else
-  {
-    /* Unknown frame: dump it raw so a protocol mismatch is visible. */
-    LOG("RAW   ID=0x%03X DLC=%u  %02X %02X %02X %02X %02X %02X %02X %02X\r\n",
-        (unsigned int)frame->id, (unsigned int)frame->dlc,
-        frame->data[0], frame->data[1], frame->data[2], frame->data[3],
-        frame->data[4], frame->data[5], frame->data[6], frame->data[7]);
-  }
-}
-#endif
-
-static void PrintBusDiagnostics(void)
-{
-  /* EFLG carries the RX overflow / error-passive / bus-off flags, TEC and REC
-     are the error counters.
-
-     All of those read 0x00 on a healthy idle bus - and they also read 0x00
-     when the SPI link has died, because a disconnected MISO line reads as
-     zeros. On their own they cannot tell "nobody is transmitting" from "I can
-     no longer hear the chip". CNF2 breaks the tie: it was written with a known
-     non-zero value during bring-up (0x90 for 500 kbit/s on an 8 MHz crystal),
-     so reading it back proves the link is still alive. */
-  uint8_t cnf2 = MCP2515_Read(MCP_CNF2);
-  bool spiAlive = (cnf2 != 0x00u) && (cnf2 != 0xFFu);
-
-  LOG("waiting... CANSTAT=0x%02X EFLG=0x%02X TEC=%u REC=%u CNF2=0x%02X spi=%s\r\n",
-      (unsigned int)MCP2515_Read(MCP_CANSTAT),
-      (unsigned int)MCP2515_Read(MCP_EFLG),
-      (unsigned int)MCP2515_Read(MCP_TEC),
-      (unsigned int)MCP2515_Read(MCP_REC),
-      (unsigned int)cnf2,
-      spiAlive ? "ok" : "DEAD");
-}
 /* USER CODE END 0 */
 
 /**
@@ -159,12 +97,13 @@ int main(void)
   MX_USART1_UART_Init();
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
-  LOG("\r\n=== f401 MCP2515 receiver node ===\r\n");
+  LOG("\r\n=== f401 MCP2515 receiver node (FreeRTOS) ===\r\n");
 
-  /* The bring-up sequence runs exactly once. It used to sit inside while(1),
-     which meant resetting and reconfiguring the chip on every pass: frames
-     arriving at that moment were lost, and for ~10 ms the node did not
-     acknowledge anything on the bus. */
+  /* Bring-up runs here, before the scheduler starts, while this is still the
+     only thread of execution: HAL_Delay and HAL_GetTick work because the HAL
+     timebase is TIM11 rather than SysTick, and LOG is safe because no task
+     exists yet to contend for the UART. From the moment the scheduler starts,
+     the MCP2515 belongs to CanRxTask and the UART to LogTask. */
   if (!MCP2515_Init(MCP2515_BITRATE_500KBPS))
   {
     LOG("MCP2515 init FAILED - CANSTAT=0x%02X\r\n",
@@ -175,26 +114,6 @@ int main(void)
 
   LOG("MCP2515 ready - 500 kbit/s, normal mode, listening for 0x%03X/0x%03X\r\n",
       (unsigned int)CAN_ID_ACCEL, (unsigned int)CAN_ID_GYRO);
-
-  uint32_t lastFrameTick = HAL_GetTick();
-  uint32_t statsTick = HAL_GetTick();
-  uint32_t framesReceived = 0;
-
-  /* Per-window breakdown of what actually got through. The totals alone hid
-     the fact that under load one message type was being starved: the old
-     "samples/s = frames / 2" figure assumed accel and gyro arrive in equal
-     numbers, which is exactly what stopped being true. */
-  uint32_t accelFrames = 0;
-  uint32_t gyroFrames = 0;
-  uint32_t otherFrames = 0;
-  uint32_t fromRxb0 = 0;
-  uint32_t fromRxb1 = 0;
-
-  /* The two overflow bits are counted separately: with rollover enabled a
-     frame that finds RXB0 full moves on to RXB1, so RX1OVR means both buffers
-     were full, while RX0OVR means RXB0 overflowed without rollover helping. */
-  uint32_t overflowRxb0 = 0;
-  uint32_t overflowRxb1 = 0;
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -210,91 +129,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* Only dlc bytes of data[] get filled in, so zero the struct to keep the
-       RAW dump from showing garbage in the untouched bytes. */
-    MCP2515_Frame_t frame = {0};
-
-    if (MCP2515_Receive(&frame))
-    {
-      lastFrameTick = HAL_GetTick();
-
-      /* Toggle the LED on every frame: the link can then be seen to be alive
-         even when nothing is watching the UART. */
-      HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-
-      framesReceived++;
-
-      if (frame.id == CAN_ID_ACCEL)
-      {
-        accelFrames++;
-      }
-      else if (frame.id == CAN_ID_GYRO)
-      {
-        gyroFrames++;
-      }
-      else
-      {
-        otherFrames++;
-      }
-
-      if (frame.buffer == 0u)
-      {
-        fromRxb0++;
-      }
-      else
-      {
-        fromRxb1++;
-      }
-
-#if LOG_EVERY_FRAME
-      PrintFrame(&frame);
-#endif
-    }
-    else if ((HAL_GetTick() - lastFrameTick) > LINK_SILENCE_MS)
-    {
-      PrintBusDiagnostics();
-      lastFrameTick = HAL_GetTick();
-    }
-
-    /* Ask the controller whether it had to throw anything away. This is not
-       an estimate: EFLG_RXnOVR is set by the hardware itself when a frame
-       arrives and both receive buffers are already full, which is exactly the
-       failure this experiment is looking for. */
-    uint8_t overflow = MCP2515_ReadAndClearOverflow();
-    if ((overflow & EFLG_RX0OVR) != 0u)
-    {
-      overflowRxb0++;
-    }
-    if ((overflow & EFLG_RX1OVR) != 0u)
-    {
-      overflowRxb1++;
-    }
-
-    uint32_t elapsed = HAL_GetTick() - statsTick;
-    if (elapsed >= STATS_PERIOD_MS)
-    {
-      uint32_t frameTenths = (framesReceived * 10000u) / elapsed;
-
-      /* Counts are raw totals over the window (~1 s), so they read directly
-         as per-second figures. Overflow counts are sticky-flag detections,
-         not frames lost: several drops between two checks count once. */
-      LOG("[rx] %u.%u f/s accel=%u gyro=%u other=%u rxb0=%u rxb1=%u ovf0=%u ovf1=%u\r\n",
-          (unsigned int)(frameTenths / 10u), (unsigned int)(frameTenths % 10u),
-          (unsigned int)accelFrames, (unsigned int)gyroFrames,
-          (unsigned int)otherFrames,
-          (unsigned int)fromRxb0, (unsigned int)fromRxb1,
-          (unsigned int)overflowRxb0, (unsigned int)overflowRxb1);
-
-      framesReceived = 0;
-      accelFrames = 0;
-      gyroFrames = 0;
-      otherFrames = 0;
-      fromRxb0 = 0;
-      fromRxb1 = 0;
-      overflowRxb0 = 0;
-      overflowRxb1 = 0;
-      statsTick = HAL_GetTick();
-    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

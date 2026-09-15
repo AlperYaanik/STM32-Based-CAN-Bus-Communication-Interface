@@ -196,7 +196,7 @@ static void MCP2515_ConfigureReceiveBuffers(void)
     MCP2515_Write(MCP_RXB0CTRL, RXBCTRL_RXM_ANY | RXB0CTRL_BUKT);
     MCP2515_Write(MCP_RXB1CTRL, RXBCTRL_RXM_ANY);
 
-    MCP2515_Write(MCP_CANINTE, 0x00);   // INT pin is not wired, we poll instead
+    MCP2515_Write(MCP_CANINTE, 0x00);   // INT stays high until MCP2515_EnableRxInterrupts
     MCP2515_Write(MCP_CANINTF, 0x00);   // clear any flags left over from reset
 }
 
@@ -273,6 +273,16 @@ void MCP2515_RequestToSend(void)
     uint8_t rx;
 
     MCP2515_SPI_Transfer(&tx, &rx, 1);
+}
+
+void MCP2515_EnableRxInterrupts(void)
+{
+    /* INT is a level output: it stays low for as long as either receive flag
+       is set, not just at the moment a frame lands. The pin interrupt on the
+       MCU is edge-triggered, so the receiving side must keep reading until
+       both flags are clear, or a frame arriving mid-drain produces no new edge
+       and is never serviced. */
+    MCP2515_Write(MCP_CANINTE, CANINTE_RX0IE | CANINTE_RX1IE);
 }
 
 uint8_t MCP2515_ReadAndClearOverflow(void)

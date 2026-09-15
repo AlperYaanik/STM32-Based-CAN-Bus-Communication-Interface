@@ -94,6 +94,10 @@ typedef struct
 #define CANINTF_RX0IF   0x01
 #define CANINTF_RX1IF   0x02
 
+/* CANINTE bits: which CANINTF flags are allowed to pull the INT pin low. */
+#define CANINTE_RX0IE   0x01
+#define CANINTE_RX1IE   0x02
+
 /* EFLG overflow bits. The chip sets these when a frame arrives with no free
    receive buffer to put it in - in other words, they are the hardware's own
    count of frames this node lost. They are sticky and must be cleared. */
@@ -195,5 +199,11 @@ bool MCP2515_Receive(MCP2515_Frame_t *frame);
    that frame was dropped - the direct, hardware-reported measure of whether
    this node is draining the controller fast enough. */
 uint8_t MCP2515_ReadAndClearOverflow(void);
+
+/* Lets the controller pull INT low whenever a frame is waiting in either
+   receive buffer. MCP2515_Init leaves interrupts disabled; call this only once
+   something is ready to service them, or the first edge may arrive before
+   there is anyone to wake. */
+void MCP2515_EnableRxInterrupts(void);
 
 #endif /* DRIVERS_MCP2515_INC_MCP2515_H_ */

@@ -10,7 +10,9 @@ validates a single layer in isolation before the next layer is added — the two
 loopback projects are kept on purpose, because they are the reason the final
 integration came up quickly.
 
-No RTOS, no third-party middleware: HAL plus hand-written drivers.
+The sender is bare-metal. The receiver runs FreeRTOS; its bare-metal predecessor is
+preserved at git tag `v1-bare-metal`, and the measurements below are what motivated the
+change. Otherwise no middleware: HAL plus hand-written drivers.
 
 ---
 
@@ -144,7 +146,7 @@ the pin map and configuration details.
 | [`f103_can_loopback`](f103_can_loopback) | STM32F103C8T6 | bxCAN configuration, acceptance filters, mailboxes and FIFO handling — verified in internal loopback, with no transceiver hardware involved |
 | [`f401_MCP2515_CANBUS-SPI_Loopback`](f401_MCP2515_CANBUS-SPI_Loopback) | STM32F401CCU6 | SPI transport to the MCP2515 and its register map, brought up one register at a time, ending in an internal loopback transmit/receive |
 | [`f103_node_sensor`](f103_node_sensor) | STM32F103C8T6 | The sender: MPU6050 driver over I²C, and periodic CAN transmission on a real bus |
-| [`f401_mcp2515_node`](f401_mcp2515_node) | STM32F401CCU6 | The receiver: MCP2515 reception on a real bus, frame decoding and UART reporting |
+| [`f401_mcp2515_node`](f401_mcp2515_node) | STM32F401CCU6 | The receiver: interrupt-driven MCP2515 reception on FreeRTOS, frame decoding and UART reporting |
 
 The two nodes share a contract file, [`can_protocol.h`](f401_mcp2515_node/Core/Inc/can_protocol.h),
 duplicated byte-identically in both projects because separate CubeIDE projects cannot
@@ -256,8 +258,10 @@ limits are measured (see *Measured performance*). Gyroscope bias calibration is 
 
 Planned next:
 
-- **Migration to FreeRTOS**, receiver first. Target: 2019 frames/s with per-frame
-  logging enabled, against 249.5 frames/s today.
+- **Migration to FreeRTOS**, receiver first — code in place, hardware measurement
+  pending. Baseline with logging on and the sender at full rate: 249 of 2019 frames/s
+  received. Target: all 2019 received with no controller overflow, any shortfall moved
+  to counted log lines.
 - Fault recovery. The sender once went silent after cabling was changed and recovered
   only on reset — either bxCAN bus-off with automatic recovery disabled, or an I²C bus
   lock-up. Neither path currently recovers on its own.
