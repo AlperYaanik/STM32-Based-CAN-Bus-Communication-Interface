@@ -132,20 +132,32 @@ frame before reading anything, so stale buffer contents are never reported as a 
 frame. The flag is cleared by the `READ RX BUFFER` instruction itself as CS rises; a
 flag left set would re-read the same frame forever and never free room for the next.
 
-**A received pair costs 4 SPI transactions, not 6.** FreeRTOS's run-time statistics
-(see below) showed receiving alone consuming essentially the whole core at the sender's
-full rate — `rx` in the `[cpu]` line at ~90%, `idle` at ~0% — with the per-pair cost
-measured at 0.89 ms across two independent runs. Of that, three SPI round trips were
-`READ STATUS` calls: one per buffer read plus a closing check that always came back
-empty. Two changes remove them. The flags a `READ STATUS` reports are cached across
-`MCP2515_Receive` calls, so when the sender's two frames have both landed by the time
-this task runs — the common case — a single status read answers for the whole pair
-instead of one each. And the closing "is there more?" check reads the `INT` pin instead
-of the bus: the MCP2515's `INT` output is defined as exactly the OR of the two receive
-flags, so a high reading proves there is nothing left without asking the chip to
-confirm it. Status, buffer, buffer, overflow — four transactions, down from status,
-buffer, status, buffer, status, overflow. Expected to cut the `rx` share by roughly a
-third at the same sender rate; not yet re-measured on hardware.
+**A received pair costs 4 or 5 SPI transactions in the common case, not 6 — measured,
+and for a different reason than expected.** FreeRTOS's run-time statistics (see below)
+first showed receiving alone consuming the whole core at the sender's full rate: `rx`
+in the `[cpu]` line at ~90%, `idle` at 0.0% with no headroom at all. Two changes were
+made. The flags a `READ STATUS` reports are cached across `MCP2515_Receive` calls, on
+the theory that the sender's two frames usually land together, so one status read could
+answer for the whole pair. And the closing "is there more?" check reads the `INT` pin
+instead of the bus — the MCP2515's `INT` output is defined as exactly the OR of the two
+receive flags, so a high reading proves there is nothing left without asking the chip to
+confirm it.
+
+Measured afterward at the same rate: `rx` 89.8% → 82.8%, and — the more telling number —
+`idle` 0.0% → 13.0%. Real headroom appeared where there had been none. But `rx` fell far
+short of the ~4-transaction, one-third-lower estimate, and the reported `wakeups` count
+explains why: it lands almost 1:1 with the accel frame count, not at half of it. If the
+caching were paying off as designed, one wake-up would usually service an entire pair
+and `wakeups` would track pairs, not frames. It doesn't, because the sender leaves only
+~220–250 µs between the two frames of a pair (110 bits at 500 kbit/s), and a single SPI
+HAL call here costs about 148 µs — status plus one buffer read already consumes close to
+that whole gap, so the second frame is usually still in flight when this task loops back
+around, the cache is empty, and a second status read is unavoidable. The caching mostly
+doesn't fire at this frame spacing. The reliable win was the other change: replacing a
+guaranteed-empty closing `READ STATUS` with a free GPIO read, worth roughly half a
+transaction per pair out of six — which is what the measured ~8% drop in `rx` actually
+reflects, and it is also the source of the new headroom, since that transaction used to
+happen unconditionally on every pass through the loop.
 
 A further step — decoupling the overflow check from the per-pair path, since it is
 diagnostic rather than required for correctness — would reach 3 transactions per pair;

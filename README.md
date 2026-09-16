@@ -312,9 +312,11 @@ limits are measured (see *Measured performance*). Gyroscope bias calibration is 
 Planned next:
 
 - FreeRTOS on the sender.
-- Raise the receiver's clock from 16 MHz. Measured CPU load at the sender's full rate
-  (`rx` ~90%, `idle` ~0%) leaves no headroom; a faster core is the remaining lever once
-  the SPI-side reduction above is verified on hardware.
+- Raise the receiver's clock from 16 MHz. Even after the SPI reduction below, CPU load
+  at the sender's full rate (`rx` 82.8%, `idle` 13.0%) still leaves little headroom; a
+  faster core is the remaining lever, and would also close most of the gap the SPI
+  reduction fell short of (see receiver README) since per-call HAL overhead, not the
+  bus itself, dominates the per-transaction cost.
 - Fault recovery. The sender once went silent after cabling was changed and recovered
   only on reset — either bxCAN bus-off with automatic recovery disabled, or an I²C bus
   lock-up. Neither path currently recovers on its own.
@@ -322,7 +324,8 @@ Planned next:
 
 Done and measured: FreeRTOS on the receiver (2019 of 2019 frames/s with logging on,
 against 249 bare-metal), CPU load via FreeRTOS run-time statistics, and a receive-path
-SPI reduction from 6 to 4 transactions per pair (pending hardware re-verification).
+SPI reduction (`idle` 0.0% → 13.0%, `rx` 89.8% → 82.8% — smaller than the transaction
+count alone predicted, for a documented reason; see receiver README).
 
 ---
 
