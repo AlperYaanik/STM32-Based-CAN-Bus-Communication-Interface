@@ -34,8 +34,7 @@ change. Otherwise no middleware: HAL plus hand-written drivers.
 
 ## Result
 
-<!-- ![Receiver output](docs/media/demo.gif) -->
-<!-- See docs/media/README.md for what to capture and the exact filename. -->
+![Receiver output](docs/media/demo.gif)
 
 The link is verified end to end on real hardware. The receiver prints decoded frames
 as they arrive:
@@ -227,8 +226,7 @@ lossless on the wire.
 
 ## Hardware
 
-<!-- ![Hardware setup](docs/media/hardware-setup.jpg) -->
-<!-- See docs/media/README.md for what to capture and the exact filename. -->
+![Hardware setup](docs/media/hardware-setup.jpg)
 
 - STM32F103C8T6 board ("Blue Pill") — sender
 - STM32F401CCU6 board ("Black Pill") — receiver
