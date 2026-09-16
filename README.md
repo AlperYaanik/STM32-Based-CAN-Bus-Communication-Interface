@@ -289,11 +289,23 @@ limits are measured (see *Measured performance*). Gyroscope bias calibration is 
 
 Planned next:
 
-- **FreeRTOS receiver: done and measured** — all 2019 frames/s received with logging
-  on, against 249 bare-metal. Next on this node: measure CPU load directly and raise the
-  clock from 16 MHz, since receiving at this rate now consumes nearly the whole core.
 - FreeRTOS on the sender.
+- Raise the receiver's clock from 16 MHz. Measured CPU load at the sender's full rate
+  (`rx` ~90%, `idle` ~0%) leaves no headroom; a faster core is the remaining lever once
+  the SPI-side reduction above is verified on hardware.
 - Fault recovery. The sender once went silent after cabling was changed and recovered
   only on reset — either bxCAN bus-off with automatic recovery disabled, or an I²C bus
   lock-up. Neither path currently recovers on its own.
 - Accelerometer calibration (six-position test), deferred.
+
+Done and measured: FreeRTOS on the receiver (2019 of 2019 frames/s with logging on,
+against 249 bare-metal), CPU load via FreeRTOS run-time statistics, and a receive-path
+SPI reduction from 6 to 4 transactions per pair (pending hardware re-verification).
+
+---
+
+## License
+
+[MIT](LICENSE), covering the code in this repository. Vendored third-party code
+(ST's CMSIS headers and HAL drivers, the FreeRTOS kernel) keeps its own license,
+noted in the same file.
