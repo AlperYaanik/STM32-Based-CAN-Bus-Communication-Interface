@@ -24,6 +24,12 @@ extern SPI_HandleTypeDef hspi1;
    EID8, EID0, DLC and eight data bytes. */
 #define MCP2515_MAX_TRANSFER    14u
 
+/* Flags read by MCP2515_Receive but not yet acted on; see its comment.
+   Declared here, ahead of MCP2515_Init, so a reset can clear it - a stale
+   flag surviving a reset would refer to a buffer the chip no longer has
+   anything in. */
+static uint8_t pendingStatusFlags = 0u;
+
 static const MCP2515_BitTiming_t bitTiming8MHz[] = {
     [MCP2515_BITRATE_125KBPS] = { .cnf1 = 0x01, .cnf2 = 0xB1, .cnf3 = 0x05 },
     [MCP2515_BITRATE_250KBPS] = { .cnf1 = 0x00, .cnf2 = 0xB1, .cnf3 = 0x05 },
@@ -202,6 +208,8 @@ static void MCP2515_ConfigureReceiveBuffers(void)
 
 bool MCP2515_Init(MCP2515_Bitrate_t bitrate)
 {
+    pendingStatusFlags = 0u;
+
     /* CubeMX brings PA4 up LOW. If the SPI peripheral starts while CS is
        asserted, the MCP2515 mistakes the first clock edges for a command,
        so raise CS before anything else. */
@@ -301,40 +309,66 @@ uint8_t MCP2515_ReadAndClearOverflow(void)
 
 bool MCP2515_Receive(MCP2515_Frame_t *frame)
 {
-    /* READ STATUS costs two bytes and reports both receive flags at once, so
-       the common case - nothing waiting - is a single short transaction. */
-    uint8_t status = MCP2515_ReadStatus();
-    bool rxb0Ready = (status & MCP2515_STATUS_RX0IF) != 0u;
-    bool rxb1Ready = (status & MCP2515_STATUS_RX1IF) != 0u;
+    if (pendingStatusFlags == 0u)
+    {
+        /* The MCP2515's INT output is defined as exactly this OR of the two
+           flags (RXnIE permitting, which MCP2515_EnableRxInterrupts sets for
+           both). When the pin reads high there is provably nothing to read,
+           so the far cheaper GPIO read stands in for a status query that
+           could only agree with it. Measured together with the caching
+           above, this cuts a received accel+gyro pair from 6 SPI
+           transactions to 4: one status, one read per buffer, one overflow
+           check - down from status+read+status+read+status+overflow. */
+        if (HAL_GPIO_ReadPin(MCP2515_INT_PORT, MCP2515_INT_PIN) == GPIO_PIN_SET)
+        {
+            return false;
+        }
+
+        pendingStatusFlags = MCP2515_ReadStatus() &
+                             (MCP2515_STATUS_RX0IF | MCP2515_STATUS_RX1IF);
+
+        if (pendingStatusFlags == 0u)
+        {
+            /* The pin was low a moment ago but the status read now shows
+               nothing - the flag it was reporting cleared in between. Not
+               reachable with the single caller this driver currently has,
+               kept as a safe fallback rather than an assumption. */
+            return false;
+        }
+    }
+
     uint8_t command;
+    uint8_t consumedFlag;
 
 #if MCP2515_SERVICE_RXB1_FIRST
-    if (rxb1Ready)
+    if ((pendingStatusFlags & MCP2515_STATUS_RX1IF) != 0u)
     {
         command = MCP2515_CMD_READ_RXB1;
+        consumedFlag = MCP2515_STATUS_RX1IF;
         frame->buffer = 1;
     }
-    else if (rxb0Ready)
+    else
     {
         command = MCP2515_CMD_READ_RXB0;
+        consumedFlag = MCP2515_STATUS_RX0IF;
         frame->buffer = 0;
     }
 #else
-    if (rxb0Ready)
+    if ((pendingStatusFlags & MCP2515_STATUS_RX0IF) != 0u)
     {
         command = MCP2515_CMD_READ_RXB0;
+        consumedFlag = MCP2515_STATUS_RX0IF;
         frame->buffer = 0;
     }
-    else if (rxb1Ready)
+    else
     {
         command = MCP2515_CMD_READ_RXB1;
+        consumedFlag = MCP2515_STATUS_RX1IF;
         frame->buffer = 1;
     }
 #endif
-    else
-    {
-        return false;
-    }
+
+    pendingStatusFlags &= (uint8_t)~consumedFlag;
 
     /* One transaction for the whole buffer. Raising CS at the end also clears
        the matching RXnIF flag, which is why no bit-modify follows: with this

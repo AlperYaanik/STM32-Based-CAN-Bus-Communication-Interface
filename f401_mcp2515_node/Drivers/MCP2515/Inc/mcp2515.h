@@ -142,6 +142,14 @@ typedef struct
 #define MCP2515_CS_PORT GPIOA
 #define MCP2515_CS_PIN  GPIO_PIN_4
 
+/* MCP2515_Receive reads this pin directly (see its comment) to skip a wasted
+   SPI transaction when the controller has nothing to report. It is a plain
+   read of the same physical pin freertos.c configures as EXTI0 and CubeMX
+   labels MCP2515_INT - not a second definition of it, just the driver
+   reaching for the CubeMX-generated name already visible through main.h. */
+#define MCP2515_INT_PORT MCP2515_INT_GPIO_Port
+#define MCP2515_INT_PIN  MCP2515_INT_Pin
+
 //MCP2515 Crystal Oscillator Definition
 #define MCP2515_OSC_8MHZ      8000000UL
 #define MCP2515_OSC_16MHZ     16000000UL
@@ -191,7 +199,11 @@ bool MCP2515_LoadTXBuffer(uint16_t id,uint8_t length, const uint8_t *data);
 void MCP2515_RequestToSend(void);
 
 /* Non-blocking. Returns true only if a frame was actually received; it then
-   fills *frame and clears the matching RXnIF flag. Otherwise false. */
+   fills *frame and clears the matching RXnIF flag. Otherwise false.
+
+   Single-caller only: it keeps flags read but not yet acted on in a static
+   variable between calls, so it is not safe to call from more than one task.
+   In this project that is CanRxTask, which already owns the whole MCP2515. */
 bool MCP2515_Receive(MCP2515_Frame_t *frame);
 
 /* Returns the EFLG_RXnOVR bits that were set since the last call, and clears

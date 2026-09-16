@@ -318,17 +318,18 @@ void StartCanRxTask(void *argument)
 
   for (;;)
   {
-    /* Drain first, sleep second - and keep draining while INT is still low.
-       INT stays low as long as any frame is waiting, but the pin interrupt
-       fires only on a falling edge. A frame that lands while the previous one
-       is being read keeps INT low with no new edge; sleeping at that point
-       would wait for an interrupt that never comes while the buffers fill.
-       Checking the pin level closes that gap. Frames that arrived before
-       interrupts were enabled are picked up by the same first pass. */
-    do
-    {
-      DrainReceiveBuffers();
-    } while (HAL_GPIO_ReadPin(MCP2515_INT_GPIO_Port, MCP2515_INT_Pin) == GPIO_PIN_RESET);
+    /* Drain first, sleep second. DrainReceiveBuffers calls MCP2515_Receive in
+       a loop, and that function's own pin check (see mcp2515.c) is what
+       decides when there is truly nothing left - a single call here already
+       drains until INT is genuinely high, so no retry loop is needed at this
+       level; an earlier version kept one here before that check moved into
+       the driver. The reasoning it existed for still applies to the driver's
+       loop: INT stays low as long as any frame is waiting, but the pin
+       interrupt fires only on a falling edge, so a frame landing while the
+       previous one is mid-read produces no new edge, and reading is the only
+       way to notice it. Frames that arrived before interrupts were enabled
+       are picked up by this same first pass. */
+    DrainReceiveBuffers();
 
     /* Notifications latch: an edge between the pin check above and this call
        is not lost, the call simply returns at once. */

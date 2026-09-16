@@ -132,6 +132,26 @@ frame before reading anything, so stale buffer contents are never reported as a 
 frame. The flag is cleared by the `READ RX BUFFER` instruction itself as CS rises; a
 flag left set would re-read the same frame forever and never free room for the next.
 
+**A received pair costs 4 SPI transactions, not 6.** FreeRTOS's run-time statistics
+(see below) showed receiving alone consuming essentially the whole core at the sender's
+full rate — `rx` in the `[cpu]` line at ~90%, `idle` at ~0% — with the per-pair cost
+measured at 0.89 ms across two independent runs. Of that, three SPI round trips were
+`READ STATUS` calls: one per buffer read plus a closing check that always came back
+empty. Two changes remove them. The flags a `READ STATUS` reports are cached across
+`MCP2515_Receive` calls, so when the sender's two frames have both landed by the time
+this task runs — the common case — a single status read answers for the whole pair
+instead of one each. And the closing "is there more?" check reads the `INT` pin instead
+of the bus: the MCP2515's `INT` output is defined as exactly the OR of the two receive
+flags, so a high reading proves there is nothing left without asking the chip to
+confirm it. Status, buffer, buffer, overflow — four transactions, down from status,
+buffer, status, buffer, status, overflow. Expected to cut the `rx` share by roughly a
+third at the same sender rate; not yet re-measured on hardware.
+
+A further step — decoupling the overflow check from the per-pair path, since it is
+diagnostic rather than required for correctness — would reach 3 transactions per pair;
+left undone here since the sticky `EFLG` bits already make an infrequent check safe; see
+`MCP2515_ReadAndClearOverflow`.
+
 **Rollover (`BUKT`) helps only while both buffers are being drained.** The intent was
 that a frame arriving while RXB0 is full moves on to RXB1. Measured under saturation,
 that is not what happens: whichever buffer is serviced first does all the work, and
