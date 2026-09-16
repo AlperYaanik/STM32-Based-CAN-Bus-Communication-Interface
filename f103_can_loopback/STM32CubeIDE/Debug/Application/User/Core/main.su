@@ -1,3 +1,0 @@
-D:/alper/Documents/projects/STM32-Based CAN Bus Communication Interface/f103_can_loopback/Core/Src/main.c:67:5:main	248	static
-D:/alper/Documents/projects/STM32-Based CAN Bus Communication Interface/f103_can_loopback/Core/Src/main.c:229:6:SystemClock_Config	72	static
-D:/alper/Documents/projects/STM32-Based CAN Bus Communication Interface/f103_can_loopback/Core/Src/main.c:269:6:Error_Handler	4	static,ignoring_inline_asm
