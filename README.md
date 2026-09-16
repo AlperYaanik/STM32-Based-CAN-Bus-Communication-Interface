@@ -14,6 +14,22 @@ The sender is bare-metal. The receiver runs FreeRTOS; its bare-metal predecessor
 preserved at git tag `v1-bare-metal`, and the measurements below are what motivated the
 change. Otherwise no middleware: HAL plus hand-written drivers.
 
+**Highlights**
+
+- Measured, not assumed: every performance claim below comes from counters read back
+  from the hardware itself — the MCP2515's own overflow flags for dropped frames,
+  FreeRTOS's run-time statistics for CPU load — rather than inferred from watching a
+  terminal scroll.
+- Found and root-caused an 88% packet loss under load, tracing it to two independent
+  bottlenecks (a UART print sitting in the receive path, and a byte-at-a-time SPI
+  driver) that needed two different fixes — one of them not an RTOS at all.
+- Migrated the receiver to FreeRTOS with a measured before/after: 249 → 2019 frames/s
+  received at the sender's full rate, with logging on, zero controller overflow.
+- Designed and ran a three-part hardware experiment (reordering receive buffers,
+  reordering transmitted frames) that isolated an unexplained data-starvation bug to
+  a timing effect rather than a code defect — and documented the part that still
+  doesn't have a full explanation, instead of writing one that wasn't earned.
+
 ---
 
 ## Result
